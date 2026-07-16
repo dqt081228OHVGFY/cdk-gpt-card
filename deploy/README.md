@@ -17,7 +17,7 @@ sudo -u cdk cp /opt/cdk/config.example.ini /opt/cdk/config.ini
 - 数据库建议使用 PostgreSQL，并创建独立的最小权限数据库账号。
 - `storage.dir` 使用可持久化、仅服务账号可写的绝对路径。
 - `server.public_base_url` 必须是 `https://cdk.ambition.qzz.io`，否则 API 返回的临时下载链接域名会错误。
-- 更换 `session_secret` 和 `admin_password`；密钥不要提交到仓库。
+- 更换 `session_secret` 和 `super_admin_password`；密钥不要提交到仓库。
 - 保持 `cookie_secure = true`，让管理员会话 Cookie 仅通过 HTTPS 发送。
 - 仅当反向代理可信并会覆盖转发头时设置 `trust_proxy_headers = true`。
 
@@ -84,13 +84,13 @@ curl -I https://cdk.ambition.qzz.io/admin/login
 ## 4. 数据、清理与备份
 
 - 备份 PostgreSQL 数据库和 `storage.dir`；两者需要保持同一恢复时间点。
-- 临时下载链接有效期为 1 小时。应用启动时、请求处理中每 10 分钟，以及创建/重建链接前都会清理过期记录和多余下载文件。
+- 兑换、查找和后台重建链接未下载时最长保留 24 小时，格式转换链接最长保留 10 分钟；首次下载后立即撤销并清理临时文件。应用启动时和请求处理中每 10 分钟执行过期清理。
 - 不要把 `storage`、`data`、`config.ini` 或日志目录暴露成 Apache 静态目录。
-- 反向代理应限制请求体大小，与应用的上传上限保持一致或略高；建议设置为 110 MB。
+- 反向代理应按路径限制请求体大小，并与应用的 25 MB 管理上传、20 MB 格式转换和 2 MB 手动输入上限保持一致或略高。
 
 ## 5. 安全验收
 
-- 公开页面没有 Linux.do 登录或 OAuth 回调；linux-do/cdk 只用于视觉参考。
+- 公开兑换、查找和格式转换页面无需登录，站点没有公开注册入口。
 - `/admin` 未登录时跳转到 `/admin/login`，普通用户角色不能登录。
 - 连续错误兑换或登录会返回 HTTP 429，并带 `Retry-After`。
 - API 返回的临时链接以 `https://cdk.ambition.qzz.io/d/` 开头，过期后返回 HTTP 410。
