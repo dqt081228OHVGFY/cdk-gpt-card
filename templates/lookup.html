@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}查找原文件 · GPT发卡网{% endblock %}
+{% block head %}<style>@view-transition { navigation: auto; }</style>{% endblock %}
+{% block body %}
+<main class="portal-shell">
+  <div id="lookupToast" class="toast" hidden role="status" aria-live="polite"></div>
+
+  <header class="portal-header" data-portal-reveal>
+    <a class="portal-brand" href="/" aria-label="GPT发卡网首页">
+      <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span><b>GPT发卡网</b><small>DELIVERY</small></span>
+    </a>
+    <nav class="portal-nav" data-active-route="lookup" aria-label="主导航">
+      <span class="portal-nav-indicator" aria-hidden="true"></span>
+      <a href="/">CDK 兑换</a>
+      <a href="/convert">格式转换</a>
+      <a class="active" href="/lookup" aria-current="page">查找</a>
+    </nav>
+    <a class="admin-entry" href="/admin/login" aria-label="进入管理员登录页面">
+      <span>管理入口</span>
+    </a>
+  </header>
+
+  <section class="portal-stage redeem-stage lookup-stage">
+    <div class="portal-intro" data-portal-reveal style="--reveal-delay: .08s">
+      <span class="portal-kicker"><i></i>DELIVERY LOOKUP</span>
+      <h1>忘记账号？<br><em>原文件还能找回。</em></h1>
+      <p>兑换后不小心关了页面、没抄到账号？输入原兑换码在这里重新查回。</p>
+
+      <ul class="promise-list" aria-label="查找说明">
+        <li><span>01</span><b>原码反查</b><small>无需再次消耗次数</small></li>
+        <li><span>02</span><b>原文件</b><small>不更换绑定内容</small></li>
+        <li><span>03</span><b>临时链接</b><small>24 小时内下载</small></li>
+      </ul>
+    </div>
+
+    <div class="claim-column" data-portal-reveal style="--reveal-delay: .16s">
+      <form id="redeemForm" class="claim-card redeem-form" data-endpoint="/api/lookup">
+        <div class="claim-card-heading">
+          <div>
+            <span>反查操作</span>
+            <h2>查找已兑换文件</h2>
+          </div>
+          <span class="claim-step">03</span>
+        </div>
+
+        <div class="field portal-field">
+          <div class="field-label-row">
+            <label for="cardCode">已兑换过的兑换码</label>
+            <small id="codeHint">每次查找一个 32 位兑换码</small>
+          </div>
+          <div class="code-input-wrap">
+            <textarea id="cardCode" name="card_code" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入已兑换的 32 位兑换码" aria-describedby="codeHint" required></textarea>
+            <span data-code-count aria-hidden="true">0</span>
+          </div>
+        </div>
+
+        <button class="portal-primary" type="submit"><span>查找原文件</span><b aria-hidden="true">→</b></button>
+        <p class="form-footnote"><span aria-hidden="true">⌁</span> 查找不会更换卡密原先绑定的文件</p>
+      </form>
+
+      <section class="delivery-result portal-result" id="deliveryResult" hidden aria-live="polite">
+        <div class="result-check" aria-hidden="true">✓</div>
+        <div>
+          <span class="result-status">FILE FOUND</span>
+          <h2>原文件已找回</h2>
+          <p id="deliveryFilename">-</p>
+        </div>
+        <a class="portal-primary compact" id="deliveryLink" href="#">下载原文件 <b aria-hidden="true">↓</b></a>
+        <div class="expiry-line"><span></span><b id="deliveryExpiry">链接将在 24:00:00 后失效</b></div>
+      </section>
+    </div>
+  </section>
+</main>
+<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+{% endblock %}

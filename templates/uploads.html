@@ -1,0 +1,97 @@
+{% extends "admin_base.html" %}
+{% block title %}上传文件{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <span class="page-index">IMPORT / 04</span>
+  <h1>批量导入</h1>
+  <p>自动识别 CPA、SUB 与账号数组，SUB 多账号会拆分为独立库存</p>
+</section>
+
+<div class="import-mode-switch" role="tablist" aria-label="导入方式">
+  <button class="active" type="button" role="tab" aria-selected="true" aria-controls="fileImportPane" data-import-mode="files">本地文件</button>
+  <button type="button" role="tab" aria-selected="false" aria-controls="manualImportPane" data-import-mode="manual">手动输入</button>
+</div>
+
+<form id="fileImportPane" class="upload-panel import-pane" method="post" action="/admin/uploads" enctype="multipart/form-data" data-upload-form data-import-pane="files">
+  <div class="upload-card">
+    <div class="upload-card-header">
+      <div>
+        <h2>账号 JSON 入库</h2>
+        <p>支持 JSON、CPA、SUB、SUB2 或包含这些文件的 ZIP。</p>
+      </div>
+      <div class="upload-limit" aria-label="单批最大 25MB">
+        <strong>25MB</strong>
+        <span>单批上限</span>
+      </div>
+    </div>
+
+    <div class="upload-file-box">
+      <label for="file">文件</label>
+      <input
+        id="file"
+        class="system-file-input"
+        name="file"
+        type="file"
+        accept=".json,.cpa,.sub,.sub2,.zip,application/json,application/zip,application/x-zip-compressed"
+        multiple
+        required
+        data-upload-input
+      >
+      <div class="upload-status" data-upload-summary>尚未选择文件</div>
+    </div>
+
+    <div class="upload-spec-grid" aria-label="上传要求">
+      <div>
+        <span>CPA</span>
+        <strong>独立入库</strong>
+      </div>
+      <div>
+        <span>SUB</span>
+        <strong>自动拆分</strong>
+      </div>
+      <div>
+        <span>大小</span>
+        <strong>不超过 25MB / 500 个账号</strong>
+      </div>
+    </div>
+
+    <ul class="upload-file-list" data-upload-list hidden></ul>
+
+    <div class="upload-footer">
+      <div class="hint-line">识别结果可在账号文件页查看；普通 JSON 会以 UNKNOWN 标记入库</div>
+      <button class="primary-action compact" type="submit" data-upload-submit>上传</button>
+    </div>
+  </div>
+</form>
+
+<form id="manualImportPane" class="upload-panel import-pane" method="post" action="/admin/uploads/manual" data-import-pane="manual" hidden>
+  <div class="upload-card">
+    <div class="upload-card-header">
+      <div>
+        <h2>手动 JSON 入库</h2>
+        <p>粘贴单个账号、账号数组或 SUB 配置。</p>
+      </div>
+      <div class="upload-limit" aria-label="手动输入最大 2MB">
+        <strong>2MB</strong>
+        <span>输入上限</span>
+      </div>
+    </div>
+
+    <div class="manual-import-fields">
+      <div class="field">
+        <label for="manualFilename">文件名</label>
+        <input id="manualFilename" name="filename" value="manual-account.json" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="manualPayload">JSON 内容</label>
+        <textarea id="manualPayload" name="payload" rows="15" spellcheck="false" required data-manual-json></textarea>
+      </div>
+    </div>
+
+    <div class="upload-footer">
+      <div class="hint-line" data-manual-size>0 B</div>
+      <button class="primary-action compact" type="submit">识别并导入</button>
+    </div>
+  </div>
+</form>
+{% endblock %}

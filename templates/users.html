@@ -1,0 +1,123 @@
+{% extends "admin_base.html" %}
+{% block title %}管理员管理{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <h1>管理员管理</h1>
+  <p>创建和维护普通管理账号；超级管理账号受保护</p>
+</section>
+<div class="table-actions split-actions">
+  <div class="bulk-actions"></div>
+  <div class="create-actions">
+    <button class="secondary-action slim" type="button" data-drawer-open="userDrawer">创建普通管理</button>
+  </div>
+</div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>账号</th>
+        <th>角色</th>
+        <th>号池地址</th>
+        <th class="center">状态</th>
+        <th class="center">创建时间</th>
+        <th class="center">更新时间</th>
+        <th class="center">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td>{{ user.username }}</td>
+        <td>{{ "超级管理" if user.role == "super_admin" else "普通管理" if user.role == "admin" else "历史账号" }}</td>
+        <td class="mono">{{ user.quota_pool_base_url or "-" }}</td>
+        <td class="center">
+          {% if user.role != "super_admin" %}<form method="post" action="/admin/users/{{ user.id }}/toggle" class="switch-form">
+            <button class="toggle-switch {{ 'on' if user.is_active else 'off' }}" type="submit" data-user-toggle {% if user.id == current_user.id %}disabled title="不能禁用当前登录账号"{% endif %}>
+              <span class="switch-track">
+                <span class="switch-thumb"></span>
+              </span>
+              <b>{{ "启用" if user.is_active else "禁用" }}</b>
+            </button>
+          </form>{% else %}<span class="status pending">受保护</span>{% endif %}
+        </td>
+        <td class="center">{{ user.created_at|full_dt }}</td>
+        <td class="center" data-updated-at>{{ user.updated_at|full_dt }}</td>
+        <td class="center">
+          {% if user.role != "super_admin" %}
+          <button class="secondary-action mini" type="button" data-reset-password data-user-id="{{ user.id }}" data-username="{{ user.username }}">重置密码</button>
+          <button class="secondary-action mini" type="button" data-pool-config data-user-id="{{ user.id }}" data-username="{{ user.username }}" data-pool-url="{{ user.quota_pool_base_url or '' }}">配置号池</button>
+          {% else %}<span class="muted-text">配置文件管理</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="drawer-backdrop" data-drawer-close hidden></div>
+<aside class="drawer" id="userDrawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div>
+      <h2>创建普通管理</h2>
+      <p>普通管理不能查看或修改超级管理账号</p>
+    </div>
+    <button type="button" class="drawer-close" data-drawer-close>关闭</button>
+  </div>
+  <form class="drawer-form" method="post" action="/admin/users">
+    <div class="field">
+      <label for="newUsername">账号</label>
+      <input id="newUsername" name="username" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="newUserPassword">密码</label>
+      <input id="newUserPassword" name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required>
+    </div>
+    <input name="role" type="hidden" value="admin">
+    <div class="field">
+      <label for="newUserPoolUrl">号池地址</label>
+      <input id="newUserPoolUrl" name="quota_pool_base_url" autocomplete="off" placeholder="https://example.com">
+    </div>
+    <div class="field">
+      <label for="newUserPoolKey">管理秘钥</label>
+      <input id="newUserPoolKey" name="quota_pool_management_key" type="password" autocomplete="new-password">
+    </div>
+    <button class="primary-action compact" type="submit">创建普通管理</button>
+  </form>
+</aside>
+<aside class="drawer" id="poolDrawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div>
+      <h2>配置号池</h2>
+      <p>为 <span class="mono" data-pool-username>-</span> 设置检测用号池</p>
+    </div>
+    <button type="button" class="drawer-close" data-drawer-close>关闭</button>
+  </div>
+  <form class="drawer-form" method="post" data-pool-form>
+    <div class="field">
+      <label for="poolUrl">号池地址</label>
+      <input id="poolUrl" name="quota_pool_base_url" data-pool-url autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label for="poolManagementKey">管理秘钥</label>
+      <input id="poolManagementKey" name="quota_pool_management_key" type="password" autocomplete="new-password" placeholder="留空则不修改">
+    </div>
+    <button class="primary-action compact" type="submit">保存配置</button>
+  </form>
+</aside>
+<aside class="drawer" id="passwordDrawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div>
+      <h2>重置密码</h2>
+      <p>为 <span class="mono" data-reset-username>-</span> 设置新密码</p>
+    </div>
+    <button type="button" class="drawer-close" data-drawer-close>关闭</button>
+  </div>
+  <form class="drawer-form" method="post" action="/admin/users/reset-password" data-reset-form>
+    <input type="hidden" name="user_id" data-reset-user-id>
+    <div class="field">
+      <label for="resetPassword">新密码</label>
+      <input id="resetPassword" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required>
+    </div>
+    <button class="primary-action compact" type="submit">确认重置</button>
+  </form>
+</aside>
+{% endblock %}

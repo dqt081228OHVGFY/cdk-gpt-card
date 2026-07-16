@@ -1,0 +1,41 @@
+# Secrets and runtime configuration
+config.ini
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Runtime data — never commit accounts, CDKs, databases, or downloads
+data/
+storage/
+logs/
+uploads/
+downloads/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.json.zip
+cards_batch_*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local tooling and archives
+*.bak
+*.tgz
+*.tar.gz
+*.zip
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

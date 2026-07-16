@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}GPT发卡网{% endblock %}
+{% block head %}<style>@view-transition { navigation: auto; }</style>{% endblock %}
+{% block body %}
+<main class="portal-shell">
+  <div id="redeemToast" class="toast" hidden role="status" aria-live="polite"></div>
+
+  <header class="portal-header" data-portal-reveal>
+    <a class="portal-brand" href="/" aria-label="GPT发卡网首页">
+      <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span><b>GPT发卡网</b><small>DELIVERY</small></span>
+    </a>
+    <nav class="portal-nav" data-active-route="redeem" aria-label="主导航">
+      <span class="portal-nav-indicator" aria-hidden="true"></span>
+      <a class="active" href="/" aria-current="page">CDK 兑换</a>
+      <a href="/convert">格式转换</a>
+      <a href="/lookup">查找</a>
+    </nav>
+    <a class="admin-entry" href="/admin/login" aria-label="进入管理员登录页面">
+      <span>管理入口</span>
+    </a>
+  </header>
+
+  <section class="portal-stage redeem-stage" id="redeem">
+    <div class="portal-intro" data-portal-reveal style="--reveal-delay: .08s">
+      <span class="portal-kicker"><i></i>SECURE DELIVERY</span>
+      <h1>输入兑换码，<br><em>领取专属文件。</em></h1>
+      <p>一户一码安全交付。单个 CDK 输出 JSON，多条 CDK 打包 ZIP，下载后链接立即失效。</p>
+
+      <div class="inventory-card inventory-showcase" aria-live="polite">
+        <div>
+          <span class="live-dot" aria-hidden="true"></span>
+          <span>当前账号库存</span>
+        </div>
+        <div class="inventory-groups">
+          <section>
+            <strong id="inventoryCount" data-value="{{ inventory.normal }}">{{ inventory.normal }}</strong>
+            <small>正常号分组</small>
+          </section>
+          <section class="problem">
+            <strong id="problemInventoryCount" data-value="{{ inventory.problem }}">{{ inventory.problem }}</strong>
+            <small>问题号分组</small>
+          </section>
+          <section class="unchecked">
+            <strong id="uncheckedInventoryCount" data-value="{{ inventory.unchecked }}">{{ inventory.unchecked }}</strong>
+            <small>待测号分组</small>
+          </section>
+        </div>
+      </div>
+
+      <ul class="promise-list" aria-label="交付保障">
+        <li><span>01</span><b>一户一码</b><small>独立账号绑定</small></li>
+        <li><span>02</span><b>防爆破</b><small>异常请求限制</small></li>
+        <li><span>03</span><b>临时链接</b><small>到期自动清理</small></li>
+      </ul>
+    </div>
+
+    <div class="claim-column" data-portal-reveal style="--reveal-delay: .16s">
+      <form id="redeemForm" class="claim-card redeem-form">
+        <div class="claim-card-heading">
+          <div>
+            <span>领取操作</span>
+            <h2>兑换 CDK</h2>
+          </div>
+          <span class="claim-step">01</span>
+        </div>
+
+        <div class="field portal-field">
+          <div class="field-label-row">
+            <label for="cardCode">兑换码</label>
+            <small id="codeHint">自动识别 32 位十六进制码</small>
+          </div>
+          <div class="code-input-wrap">
+            <textarea id="cardCode" name="card_code" maxlength="4000" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入 32 位十六进制兑换码" aria-describedby="codeHint" required></textarea>
+            <span data-code-count aria-hidden="true">0</span>
+          </div>
+        </div>
+        <input type="hidden" name="delivery" value="link">
+
+        <fieldset class="field portal-field format-fieldset">
+          <legend>交付格式</legend>
+          <div class="format-grid" role="radiogroup" aria-label="交付格式">
+            <label class="format-option selected" data-format-card>
+              <input type="radio" name="output_format" value="cpa" checked>
+              <span class="format-icon">C</span>
+              <span><b>CPA JSON</b><small>原始账号格式</small></span>
+              <i aria-hidden="true"></i>
+            </label>
+            <label class="format-option" data-format-card>
+              <input type="radio" name="output_format" value="sub">
+              <span class="format-icon">S</span>
+              <span><b>SUB JSON</b><small>sub2api 格式</small></span>
+              <i aria-hidden="true"></i>
+            </label>
+          </div>
+        </fieldset>
+
+        <button class="portal-primary" type="submit"><span>生成临时下载链接</span><b aria-hidden="true">→</b></button>
+        <p class="form-footnote"><span aria-hidden="true">⌁</span> 兑换行为将记录时间与使用状态</p>
+      </form>
+
+      <section class="delivery-result portal-result" id="deliveryResult" hidden aria-live="polite">
+        <div class="result-check" aria-hidden="true">✓</div>
+        <div>
+          <span class="result-status">DELIVERY READY</span>
+          <h2>文件已就绪</h2>
+          <p id="deliveryFilename">-</p>
+        </div>
+        <a class="portal-primary compact" id="deliveryLink" href="#">下载文件 <b aria-hidden="true">↓</b></a>
+        <div class="expiry-line"><span></span><b id="deliveryExpiry">链接将在 24:00:00 后失效</b></div>
+      </section>
+    </div>
+  </section>
+
+</main>
+<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+{% endblock %}

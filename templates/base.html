@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="view-transition" content="same-origin">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='favicon.svg') }}?v=20260714-1">
+    <title>{% block title %}GPT发卡网{% endblock %}</title>
+    <script>
+      try {
+        if (sessionStorage.removeItem("portal-cross-navigation")) {
+          document.documentElement.classList.add("portal-transition-arrival");
+        }
+        if (sessionStorage.removeItem("admin-cross-navigation")) {
+          document.documentElement.classList.add("admin-transition-arrival");
+        }
+      } catch (_) {}
+      document.addEventListener("DOMContentLoaded", function () {
+        var token = document.querySelector('meta[name="csrf-token"]');
+        if (!token) return;
+        document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function (form) {
+          if (form.querySelector('input[name="csrf_token"]')) return;
+          var input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "csrf_token";
+          input.value = token.content;
+          form.appendChild(input);
+        });
+      });
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=gpt-card-admin-20260714-6">
+    {% block head %}{% endblock %}
+  </head>
+  <body class="{% block body_class %}{% endblock %}">
+    {% block body %}{% endblock %}
+    <div class="route-progress" aria-hidden="true"><span></span></div>
+  </body>
+</html>

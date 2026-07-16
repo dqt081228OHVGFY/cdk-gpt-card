@@ -1,0 +1,32 @@
+{% extends "admin_base.html" %}
+{% block title %}账户设置{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <span class="page-index">ACCOUNT / 06</span>
+  <h1>账户设置</h1>
+  <p>修改当前管理账号的登录密码</p>
+</section>
+
+<section class="tool-panel profile-panel">
+  <div class="profile-identity">
+    <span>{{ "超级管理" if current_user.role == "super_admin" else "普通管理" }}</span>
+    <strong>{{ current_user.username }}</strong>
+  </div>
+  <form method="post" action="/admin/profile/password" class="profile-form">
+    <input name="username" type="text" autocomplete="username" value="{{ current_user.username }}" hidden>
+    <div class="field">
+      <label for="currentPassword">当前密码</label>
+      <input id="currentPassword" name="current_password" type="password" autocomplete="current-password" required>
+    </div>
+    <div class="field">
+      <label for="newPassword">新密码</label>
+      <input id="newPassword" name="new_password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required>
+    </div>
+    <div class="field">
+      <label for="confirmPassword">确认新密码</label>
+      <input id="confirmPassword" name="confirm_password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required>
+    </div>
+    <button class="primary-action compact" type="submit">更新密码并退出</button>
+  </form>
+</section>
+{% endblock %}

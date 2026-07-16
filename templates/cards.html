@@ -1,0 +1,214 @@
+{% extends "admin_base.html" %}
+{% block title %}卡密管理{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <span class="page-index">CDK / 02</span>
+  <h1>CDK 管理</h1>
+  <p>一户一码生成、状态控制与兑换反查</p>
+</section>
+<form class="filters cards-filters" method="get" action="/admin/cards">
+  <input class="card-search-filter" name="q" placeholder="搜索卡密" value="{{ filters.q }}" aria-label="搜索卡密">
+  <select class="status-filter" name="status" aria-label="CDK 状态">
+    <option value="">全部状态</option>
+    {% for value in ["pending", "sold", "voided", "expired"] %}
+    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ "已过期" if value == "expired" else value|card_status_label }}</option>
+    {% endfor %}
+  </select>
+  <input name="start" type="date" value="{{ filters.start }}" aria-label="开始日期">
+  <input name="end" type="date" value="{{ filters.end }}" aria-label="结束日期">
+  <input type="hidden" name="page_size" value="{{ pagination.page_size }}">
+  <button class="secondary-action filter-action" type="submit">筛选</button>
+  <a class="ghost-action filter-reset" href="/admin/cards">重置</a>
+</form>
+<form method="post" class="table-form list-form cards-list-form" data-bulk-form>
+  <div class="table-actions split-actions">
+    <div class="bulk-actions">
+      <span class="selected-count" data-selected-count>已选 0 个</span>
+      <select class="bulk-status-select" name="target_status" disabled aria-label="目标状态">
+        {% for value in ["sold", "voided"] %}
+        <option value="{{ value }}">{{ value|card_status_label }}</option>
+        {% endfor %}
+      </select>
+      <button class="secondary-action slim" type="submit" formaction="/admin/cards/status" data-bulk-action data-status-update disabled>批量修改状态</button>
+      <button class="secondary-action slim" type="submit" formaction="/admin/cards/download" data-bulk-action data-card-download data-allowed-statuses="pending" disabled>批量下载</button>
+      <button class="ghost-action slim" type="button" data-bulk-action data-card-policy-open disabled>使用策略</button>
+      <button class="secondary-action slim" type="submit" formaction="/admin/cards/extend" data-bulk-action data-confirm-card-action data-confirm-message="确定为选中的卡密追加 1 次兑换？追加后仍使用原卡密领取原绑定文件。" data-confirm-label="确认追加" disabled>追加 1 次兑换</button>
+      <button class="ghost-action slim" type="submit" formaction="/admin/cards/disable" data-bulk-action data-confirm-card-action data-confirm-message="确定禁用选中的卡密？禁用后将立即无法兑换。" data-confirm-label="确认禁用" disabled>批量禁用</button>
+      <button class="danger-action slim" type="submit" formaction="/admin/cards/delete" data-bulk-action data-confirm-card-action data-confirm-message="确定删除选中的卡密？所有状态均会删除，相关兑换记录和临时链接也会一并移除，此操作不可恢复。" data-confirm-label="确认删除" disabled>批量删除</button>
+    </div>
+    <div class="create-actions">
+      <button class="secondary-action slim" type="button" data-drawer-open="cardDrawer">生成卡密</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <colgroup>
+        <col class="cards-select-col">
+        <col class="cards-seq-col">
+        <col class="cards-code-col">
+        <col class="cards-file-count-col">
+        <col class="cards-usage-col">
+        <col class="cards-expiry-col">
+        <col class="cards-status-col">
+        <col class="cards-time-col">
+        <col class="cards-time-col">
+        <col class="cards-time-col">
+        {% if current_user.role in ["admin", "super_admin"] %}<col class="cards-operator-col">{% endif %}
+        <col class="cards-action-col">
+      </colgroup>
+      <thead>
+        <tr>
+          <th><input type="checkbox" data-check-all aria-label="全选本页 CDK"></th>
+          <th class="center">序号</th>
+          <th>卡密</th>
+          <th class="center">账号数</th>
+          <th class="center">使用次数</th>
+          <th class="center time-col">过期时间</th>
+          <th class="center">状态</th>
+          <th class="center time-col">首次使用时间</th>
+          <th class="center time-col">作废时间</th>
+          <th class="center time-col">创建时间</th>
+          {% if current_user.role in ["admin", "super_admin"] %}<th class="center">操作用户</th>{% endif %}
+          <th class="center">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for card in cards %}
+        {% set is_expired = card.expires_at and card.expires_at <= current_time and card.status not in ["sold", "voided"] %}
+        <tr>
+          <td><input type="checkbox" name="ids" value="{{ card.id }}" data-status="{{ card.status }}" aria-label="选择 CDK {{ card.code }}"></td>
+          <td class="center">{{ loop.index }}</td>
+          <td>
+            <div class="copy-cell">
+              <span class="mono">{{ card.code }}</span>
+              <button class="copy-button" type="button" data-copy-text="{{ card.code }}" title="复制卡密" aria-label="复制卡密">复制</button>
+            </div>
+          </td>
+          <td class="center">{{ card.file_count }}</td>
+          <td class="center"><span class="usage-count"><strong>{{ card.redemption_count }}</strong> / {{ card.max_redemptions }}</span></td>
+          <td class="center time-col">{{ card.expires_at|full_dt("永不过期") }}</td>
+          <td class="center"><span class="status {{ 'expired' if is_expired else card.status }}">{{ "已过期" if is_expired else card.status|card_status_label }}</span></td>
+          <td class="center time-col">{{ card.used_at|full_dt }}</td>
+          <td class="center time-col">{{ card.voided_at|full_dt }}</td>
+          <td class="center time-col">{{ card.created_at|full_dt }}</td>
+          {% if current_user.role in ["admin", "super_admin"] %}<td class="center">{{ "系统" if current_user.role == "admin" and card.creator.role == "super_admin" else card.creator.username }}</td>{% endif %}
+          <td class="center">
+            <button class="ghost-action mini" type="button" data-usage-detail data-card-id="{{ card.id }}">使用详情</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{% if current_user.role in ['admin', 'super_admin'] %}12{% else %}11{% endif %}" class="empty">暂无卡密</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
+<div class="pagination">
+    <div class="pager-controls">
+      <span class="page-summary">共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.total_pages }} 页</span>
+      <form method="get" action="/admin/cards" class="page-size-form">
+        <input type="hidden" name="q" value="{{ filters.q }}">
+        <input type="hidden" name="status" value="{{ filters.status }}">
+        <input type="hidden" name="start" value="{{ filters.start }}">
+        <input type="hidden" name="end" value="{{ filters.end }}">
+        <select name="page_size" aria-label="每页显示数量" onchange="this.form.submit()">
+          {% for size in pagination.page_sizes %}
+          <option value="{{ size }}" {% if pagination.page_size == size %}selected{% endif %}>每页 {{ size }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <div class="pager-links">
+      {% if pagination.has_prev %}
+      <a href="?q={{ filters.q }}&status={{ filters.status }}&start={{ filters.start }}&end={{ filters.end }}&page_size={{ pagination.page_size }}&page={{ pagination.prev_page }}">上一页</a>
+      {% else %}
+      <span>上一页</span>
+      {% endif %}
+      {% if pagination.has_next %}
+      <a href="?q={{ filters.q }}&status={{ filters.status }}&start={{ filters.start }}&end={{ filters.end }}&page_size={{ pagination.page_size }}&page={{ pagination.next_page }}">下一页</a>
+      {% else %}
+      <span>下一页</span>
+      {% endif %}
+      </div>
+    </div>
+  </div>
+<div class="drawer-backdrop" data-drawer-close hidden></div>
+<aside class="drawer" id="cardDrawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div>
+      <h2>生成 CDK</h2>
+      <p>每个 CDK 固定绑定一个账号</p>
+    </div>
+    <button type="button" class="drawer-close" data-drawer-close>关闭</button>
+  </div>
+  <form class="drawer-form" method="post" action="/admin/cards/create">
+    <input name="file_count" type="hidden" value="1">
+    <div class="one-code-rule"><span>1</span><b>CDK</b><i></i><span>1</span><b>账号</b></div>
+    <div class="field">
+      <label for="cardQuantity">生成数量</label>
+      <input id="cardQuantity" name="quantity" type="number" min="1" max="200" value="10">
+    </div>
+    <div class="field">
+      <label for="cardMaxRedemptions">每码最大使用次数</label>
+      <input id="cardMaxRedemptions" name="max_redemptions" type="number" min="1" max="100" value="1" required>
+    </div>
+    <div class="field">
+      <label for="cardExpiresAt">过期时间</label>
+      <input id="cardExpiresAt" name="expires_at" type="datetime-local">
+      <small class="field-help">留空表示永不过期</small>
+    </div>
+    <button class="primary-action compact" type="submit">生成 CDK</button>
+  </form>
+</aside>
+<aside class="drawer" id="policyDrawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div>
+      <h2>批量设置使用策略</h2>
+      <p data-card-policy-selected>尚未选择卡密</p>
+    </div>
+    <button type="button" class="drawer-close" data-drawer-close>关闭</button>
+  </div>
+  <form class="drawer-form" method="post" action="/admin/cards/policy" data-card-policy-form>
+    <div data-card-policy-ids></div>
+    <div class="field">
+      <label for="policyMaxRedemptions">每码最大使用次数</label>
+      <input id="policyMaxRedemptions" name="max_redemptions" type="number" min="1" max="100" value="1" required>
+    </div>
+    <div class="field">
+      <label for="policyExpiresAt">过期时间</label>
+      <input id="policyExpiresAt" name="expires_at" type="datetime-local">
+      <small class="field-help">留空表示永不过期；不能早于当前时间</small>
+    </div>
+    <button class="primary-action compact" type="submit">保存使用策略</button>
+  </form>
+</aside>
+<aside class="drawer usage-drawer" id="usageDrawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div>
+      <h2>使用详情</h2>
+      <p class="mono" data-usage-card-code>-</p>
+    </div>
+    <button type="button" class="drawer-close" data-drawer-close>关闭</button>
+  </div>
+  <div class="usage-summary">
+    <div>
+      <span>首次使用时间</span>
+      <strong data-usage-first-time>-</strong>
+    </div>
+    <div>
+      <span>兑换次数</span>
+      <strong data-usage-count>0</strong>
+    </div>
+    <div>
+      <span>最大使用次数</span>
+      <strong data-usage-max>1</strong>
+    </div>
+    <div>
+      <span>过期时间</span>
+      <strong data-usage-expires>永不过期</strong>
+    </div>
+  </div>
+  <div class="usage-list" data-usage-list>
+    <div class="empty">暂无使用记录</div>
+  </div>
+</aside>
+{% endblock %}

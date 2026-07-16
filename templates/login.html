@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}管理员登录 · GPT发卡网{% endblock %}
+{% block body %}
+<main class="portal-shell login-portal">
+
+  <header class="portal-header" data-portal-reveal>
+    <a class="portal-brand" href="/" aria-label="返回 GPT发卡网">
+      <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span><b>GPT发卡网</b><small>CONTROL</small></span>
+    </a>
+    <a class="back-entry" href="/"><span aria-hidden="true">←</span> 返回兑换页</a>
+  </header>
+
+  <section class="login-stage">
+    <div class="login-message" data-portal-reveal style="--reveal-delay: .08s">
+      <span class="portal-kicker"><i></i>AUTHORIZED ACCESS ONLY</span>
+      <h1>管理你的<br><em>CDK 交付系统。</em></h1>
+      <p>生成一户一码 CDK、批量导入账号文件，并反查每一次兑换和临时下载记录。</p>
+      <div class="admin-capabilities" aria-label="管理端功能">
+        <span>CDK 生成</span><span>批量导入</span><span>使用反查</span><span>链接重建</span>
+      </div>
+    </div>
+
+    <form class="login-card portal-login-card" method="post" action="/admin/login" data-login-form data-portal-reveal style="--reveal-delay: .16s">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="claim-card-heading">
+        <div><span>控制台访问</span><h2>管理员登录</h2></div>
+        <span class="admin-shield" aria-hidden="true">A</span>
+      </div>
+
+      <div class="field portal-field">
+        <label for="username">管理员账号</label>
+        <div class="login-input-wrap">
+          <input id="username" name="username" value="{{ username | default('', true) }}" autocomplete="username" autocapitalize="none" required autofocus>
+        </div>
+      </div>
+
+      <div class="field portal-field">
+        <label for="password">登录密码</label>
+        <div class="login-input-wrap">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button class="password-toggle" type="button" data-password-toggle aria-label="显示密码" aria-pressed="false">显示</button>
+        </div>
+      </div>
+
+      {% if message %}<div class="login-error login-success" role="status"><span aria-hidden="true">✓</span>{{ message }}</div>{% endif %}
+      {% if error %}<div class="login-error" role="alert"><span aria-hidden="true">!</span>{{ error }}</div>{% endif %}
+      <button class="portal-primary" type="submit" data-login-submit><span>进入管理控制台</span><b aria-hidden="true">→</b></button>
+      <p class="form-footnote"><span aria-hidden="true">⌁</span> 登录失败次数过多将被临时限制</p>
+    </form>
+  </section>
+
+</main>
+<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+{% endblock %}

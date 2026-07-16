@@ -1,0 +1,35 @@
+[Unit]
+Description=CDK redemption service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cdk
+Group=cdk
+WorkingDirectory=/opt/cdk
+Environment=TIKAWANG_CONFIG_FILE=/opt/cdk/config.ini
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/cdk/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18743 --proxy-headers --forwarded-allow-ips=127.0.0.1 --limit-concurrency 32 --backlog 64 --timeout-keep-alive 5
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=20s
+MemoryHigh=512M
+MemoryMax=768M
+CPUQuota=200%
+TasksMax=64
+LimitNOFILE=4096
+OOMPolicy=kill
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/opt/cdk/data /opt/cdk/storage /opt/cdk/logs
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

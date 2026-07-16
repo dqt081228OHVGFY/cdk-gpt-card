@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}格式转换 · GPT发卡网{% endblock %}
+{% block head %}<style>@view-transition { navigation: auto; }</style>{% endblock %}
+{% block body %}
+<main class="portal-shell">
+  <div id="convertToast" class="toast" hidden role="status" aria-live="polite"></div>
+
+  <header class="portal-header" data-portal-reveal>
+    <a class="portal-brand" href="/" aria-label="GPT发卡网首页">
+      <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span><b>GPT发卡网</b><small>DELIVERY</small></span>
+    </a>
+    <nav class="portal-nav" data-active-route="convert" aria-label="主导航">
+      <span class="portal-nav-indicator" aria-hidden="true"></span>
+      <a href="/">CDK 兑换</a>
+      <a class="active" href="/convert" aria-current="page">格式转换</a>
+      <a href="/lookup">查找</a>
+    </nav>
+    <a class="admin-entry" href="/admin/login" aria-label="进入管理员登录页面">
+      <span>管理入口</span>
+    </a>
+  </header>
+
+  <section class="portal-stage convert-stage">
+    <div class="portal-intro convert-intro" data-portal-reveal style="--reveal-delay: .08s">
+      <span class="portal-kicker"><i></i>JSON TRANSFORMER</span>
+      <h1>识别原始格式，<br><em>转换即刻完成。</em></h1>
+      <p>上传原始 JSON、CPA JSON、SUB JSON 或 ZIP。系统自动识别源格式，并按你的选择生成 CPA 或 SUB 文件。</p>
+
+      <div class="conversion-map" aria-label="支持原始 JSON 转 CPA 或 SUB、CPA 转 SUB、SUB 转 CPA">
+        <div><span>原始 JSON</span><b>RAW</b></div>
+        <i aria-hidden="true">→</i>
+        <div><span>目标格式</span><b>CPA / SUB</b></div>
+      </div>
+      <ul class="conversion-routes">
+        <li><span>RAW</span><b>→</b><em>CPA / SUB</em></li>
+        <li><span>CPA</span><b>→</b><em>SUB</em></li>
+        <li><span>SUB</span><b>→</b><em>CPA</em></li>
+      </ul>
+    </div>
+
+    <div class="claim-column" data-portal-reveal style="--reveal-delay: .16s">
+      <form id="convertForm" class="claim-card converter-panel" enctype="multipart/form-data">
+        <div class="claim-card-heading">
+          <div><span>转换操作</span><h2>上传源文件</h2></div>
+          <span class="claim-step">02</span>
+        </div>
+
+        <div class="field portal-field">
+          <label for="convertFiles">JSON / CPA / SUB / SUB2 / ZIP 文件</label>
+          <label class="portal-file-drop" for="convertFiles" data-convert-drop>
+            <input id="convertFiles" name="files" type="file" accept=".json,.cpa,.sub,.sub2,.zip,application/json,application/zip" multiple required>
+            <span class="upload-glyph" aria-hidden="true"><i>↑</i></span>
+            <b>拖放文件到这里，或点击选择</b>
+            <small id="convertFileSummary">支持 JSON、CPA、SUB、SUB2、ZIP</small>
+          </label>
+        </div>
+
+        <fieldset class="field portal-field format-fieldset">
+          <legend>目标格式</legend>
+          <div class="format-grid" role="radiogroup" aria-label="目标格式">
+            <label class="format-option selected" data-format-card>
+              <input type="radio" name="target_format" value="sub" checked>
+              <span class="format-icon">S</span>
+              <span><b>转为 SUB</b><small>合并账号格式</small></span>
+              <i aria-hidden="true"></i>
+            </label>
+            <label class="format-option" data-format-card>
+              <input type="radio" name="target_format" value="cpa">
+              <span class="format-icon">C</span>
+              <span><b>转为 CPA</b><small>独立账号格式</small></span>
+              <i aria-hidden="true"></i>
+            </label>
+          </div>
+        </fieldset>
+
+        <button class="portal-primary" type="submit"><span>开始转换并生成链接</span><b aria-hidden="true">→</b></button>
+        <p class="form-footnote"><span aria-hidden="true">⌁</span> 下载链接保留 10 分钟，过期文件自动清理</p>
+      </form>
+
+      <section class="delivery-result portal-result" id="convertResult" hidden aria-live="polite">
+        <div class="result-check" aria-hidden="true">✓</div>
+        <div>
+          <span class="result-status">CONVERTED</span>
+          <h2 id="convertResultTitle">转换完成</h2>
+          <p id="convertResultMeta">-</p>
+        </div>
+        <a class="portal-primary compact" id="convertDownloadLink" href="#">下载转换文件 <b aria-hidden="true">↓</b></a>
+        <div class="expiry-line"><span></span><b id="convertExpiry">链接将在 10:00 后失效</b></div>
+      </section>
+    </div>
+  </section>
+
+</main>
+<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+{% endblock %}

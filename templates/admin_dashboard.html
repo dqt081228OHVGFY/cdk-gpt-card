@@ -1,0 +1,48 @@
+{% extends "admin_base.html" %}
+{% block title %}管理中心 · GPT发卡网{% endblock %}
+{% block admin_content %}
+<section class="page-heading dashboard-heading">
+  <div>
+    <span class="page-index">CONTROL / 01</span>
+    <h1>运行概览</h1>
+    <p>账号库存、CDK 交付与临时下载状态</p>
+  </div>
+  <div class="system-clock" data-system-clock>
+    <span>LOCAL TIME</span>
+    <strong>{{ recent_activity[0].created_at|full_dt if recent_activity else "-" }}</strong>
+  </div>
+</section>
+
+<section class="stats-grid control-stats">
+  {% for label, value in stats.items() %}
+  <article class="stat-card">
+    <span>{{ "%02d"|format(loop.index) }} / {{ label }}</span>
+    <strong>{{ value }}</strong>
+    <i></i>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="dashboard-band">
+  <div class="comparison-block">
+    <div class="section-heading"><span>24H FLOW</span><h2>今日流转</h2></div>
+    {% for label, value in comparison.items() %}
+    <div class="comparison-row"><span>{{ label }}</span><strong>{{ value }}</strong><i style="--level: {{ [value, 12]|min }}"></i></div>
+    {% endfor %}
+  </div>
+  <div class="activity-block">
+    <div class="section-heading"><span>AUDIT LOG</span><h2>最近操作</h2></div>
+    <div class="activity-list">
+      {% for item in recent_activity %}
+      <div class="activity-row">
+        <span>{{ item.created_at|full_dt }}</span>
+        <b>{{ item.action }}</b>
+        <em>{{ item.target_type }}{% if item.target_id %} #{{ item.target_id }}{% endif %}</em>
+      </div>
+      {% else %}
+      <div class="empty">暂无操作记录</div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}
