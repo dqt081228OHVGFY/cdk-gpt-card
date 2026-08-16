@@ -20,20 +20,33 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
 from starlette.middleware.sessions import SessionMiddleware
 
-from .cliproxy import CLIProxyClient
 from .config import (
     get_admin_password,
     get_admin_username,
     get_cookie_secure,
-    get_liveness_dashboard_url,
     get_public_base_url,
     get_session_secret,
     get_super_admin_password,
     get_super_admin_username,
 )
 from .database import Base, SessionLocal, engine, get_db
-from .database import DOWNLOAD_DIR
-from .models import ADMIN_ROLES, ROLE_ADMIN, ROLE_SUPER_ADMIN, AuditLog, Card, ManagedFile, Redemption, TemporaryDownload, User
+from .database import DOWNLOAD_DIR, UPLOAD_DIR
+from .health import HEALTH_ALIVE, HEALTH_CHECKING, HEALTH_DEAD, HEALTH_UNKNOWN, health_client_ready
+from .models import (
+    ADMIN_ROLES,
+    PRODUCT_DRAFT,
+    PRODUCT_HIDDEN,
+    PRODUCT_LISTED,
+    ROLE_ADMIN,
+    ROLE_SUPER_ADMIN,
+    AuditLog,
+    Card,
+    ManagedFile,
+    Product,
+    Redemption,
+    TemporaryDownload,
+    User,
+)
 from .rate_limit import (
     SecurityLimitError,
     begin_security_attempt,
@@ -42,7 +55,10 @@ from .rate_limit import (
     request_client_identifier,
 )
 from .security import authenticate_user, hash_password, verify_password
+from .storage_crypto import read_file as read_account_file
 from .services import (
+    CONVERT_DOWNLOAD_TTL,
+    DOWNLOAD_TTL,
     ImportBudget,
     ServiceError,
     add_audit,
@@ -50,16 +66,21 @@ from .services import (
     convert_json_uploads,
     create_cards,
     create_temporary_download,
+    default_product_fields,
+    ensure_legacy_product,
     import_upload,
     import_upload_files,
     inventory_breakdown,
     json_download_name,
     lookup_card_download,
+    public_delivery_products,
+    product_health_used_last_24h,
     redeem_card,
     redeem_cards,
     redeem_cards_as_sub2api,
     rebuild_redemption_download,
     resolve_temporary_download,
+    run_file_health_checks_parallel,
     void_cards,
     void_files,
 )
@@ -214,6 +235,8 @@ def account_status_label(value: str | None) -> str:
     return {
         "available": "活",
         "unavailable": "死",
+        "unknown": "暂时未知",
+        "checking": "检测中",
     }.get(value or "", "未检测")
 
 
@@ -226,15 +249,24 @@ def card_status_label(value: str) -> str:
     }.get(value, value)
 
 
+def product_status_label(value: str) -> str:
+    return {
+        PRODUCT_DRAFT: "草稿",
+        PRODUCT_LISTED: "已上架",
+        PRODUCT_HIDDEN: "已隐藏",
+    }.get(value, value)
+
+
 templates.env.filters["dt"] = format_dt
 templates.env.filters["full_dt"] = format_full_dt
 templates.env.filters["status_label"] = status_label
 templates.env.filters["account_status_label"] = account_status_label
 templates.env.filters["card_status_label"] = card_status_label
+templates.env.filters["product_status_label"] = product_status_label
 PAGE_SIZES = (50, 100, 200)
 FILE_STATUSES = {"available", "locked", "sold", "voided"}
 CARD_STATUSES = {"pending", "sold", "voided"}
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 MAX_MANUAL_JSON_BYTES = 2 * 1024 * 1024
 MAX_CONVERT_BYTES = 20 * 1024 * 1024
 MAX_UPLOAD_FILES = 100
@@ -247,7 +279,7 @@ REQUEST_BODY_LIMITS = {
 EARLY_ADMIN_UPLOAD_ROLES = {
     "/admin/uploads": ADMIN_ROLES,
     "/admin/uploads/manual": ADMIN_ROLES,
-    "/admin/liveness/upload-check": {ROLE_SUPER_ADMIN},
+    "/admin/liveness/upload-check": ADMIN_ROLES,
 }
 SENSITIVE_DOWNLOAD_HEADERS = {
     "Cache-Control": "private, no-store",
@@ -260,8 +292,10 @@ _liveness_sync_task: asyncio.Task | None = None
 _upload_liveness_task: asyncio.Task | None = None
 _upload_liveness_queue: asyncio.Queue[tuple[int, int]] = asyncio.Queue(maxsize=500)
 LIVENESS_WORKER_SEMAPHORE = asyncio.Semaphore(1)
-LIVENESS_SYNC_INTERVAL = timedelta(minutes=20)
+LIVENESS_SYNC_INTERVAL = timedelta(minutes=15)
 LIVENESS_SYNC_LIMIT_PER_USER = 50
+UPLOAD_LIVENESS_BATCH_SIZE = 20
+UPLOAD_LIVENESS_BATCH_INTERVAL_SECONDS = 60
 
 
 async def read_upload_batch(
@@ -438,6 +472,8 @@ def startup() -> None:
             connection.execute(text("ALTER TABLE files ADD COLUMN source_format VARCHAR(20) DEFAULT 'cpa'"))
         if "account_email" not in file_columns:
             connection.execute(text("ALTER TABLE files ADD COLUMN account_email VARCHAR(320)"))
+        if "product_id" not in file_columns:
+            connection.execute(text(f"ALTER TABLE files ADD COLUMN product_id {integer_type}"))
         if added_account_status:
             connection.execute(
                 text(
@@ -457,6 +493,8 @@ def startup() -> None:
             connection.execute(text(f"ALTER TABLE cards ADD COLUMN redemption_count {integer_type} NOT NULL DEFAULT 0"))
         if "expires_at" not in card_columns:
             connection.execute(text(f"ALTER TABLE cards ADD COLUMN expires_at {datetime_type}"))
+        if "product_id" not in card_columns:
+            connection.execute(text(f"ALTER TABLE cards ADD COLUMN product_id {integer_type}"))
         if added_redemption_count:
             connection.execute(
                 text(
@@ -466,6 +504,8 @@ def startup() -> None:
             )
             connection.execute(text("UPDATE cards SET redemption_count = 1 WHERE status = 'sold' AND redemption_count = 0"))
         redemption_columns = {column["name"] for column in inspect(connection).get_columns("redemptions")}
+        if "product_id" not in redemption_columns:
+            connection.execute(text(f"ALTER TABLE redemptions ADD COLUMN product_id {integer_type}"))
         if "output_format" not in redemption_columns:
             connection.execute(text("ALTER TABLE redemptions ADD COLUMN output_format VARCHAR(20)"))
             connection.execute(
@@ -480,6 +520,11 @@ def startup() -> None:
                     """
                 )
             )
+        product_columns = {column["name"] for column in inspect(connection).get_columns("products")}
+        if "health_timeout_seconds" not in product_columns:
+            connection.execute(text(f"ALTER TABLE products ADD COLUMN health_timeout_seconds {integer_type} NOT NULL DEFAULT 15"))
+        if "health_daily_limit" not in product_columns:
+            connection.execute(text(f"ALTER TABLE products ADD COLUMN health_daily_limit {integer_type} NOT NULL DEFAULT 0"))
         connection.execute(text("UPDATE cards SET status = 'pending' WHERE status IN ('unused', 'listed', 'available')"))
         connection.execute(text("UPDATE cards SET status = 'sold' WHERE status = 'used'"))
     with SessionLocal() as db:
@@ -515,6 +560,29 @@ def startup() -> None:
                         is_active=True,
                     )
                 )
+        elif not admin_username:
+            legacy_admin = db.scalar(select(User).where(User.username == "admin", User.role == ROLE_ADMIN))
+            if legacy_admin and verify_password("Wgs0405java", legacy_admin.password_hash):
+                legacy_admin.is_active = False
+                legacy_admin.updated_at = datetime.utcnow()
+        db.flush()
+        creator_id = db.scalar(select(User.id).where(User.role == ROLE_SUPER_ADMIN).order_by(User.id.asc()))
+        legacy_product = ensure_legacy_product(db, creator_id)
+        db.flush()
+        db.execute(text("UPDATE files SET product_id = :product_id WHERE product_id IS NULL"), {"product_id": legacy_product.id})
+        db.execute(text("UPDATE cards SET product_id = :product_id WHERE product_id IS NULL"), {"product_id": legacy_product.id})
+        db.execute(
+            text(
+                """
+                UPDATE redemptions
+                SET product_id = (
+                    SELECT cards.product_id FROM cards WHERE cards.id = redemptions.card_id
+                )
+                WHERE product_id IS NULL
+                """
+            )
+        )
+        db.execute(text("UPDATE redemptions SET product_id = :product_id WHERE product_id IS NULL"), {"product_id": legacy_product.id})
         db.commit()
         cleanup_temporary_downloads(db)
         cleanup_security_attempts(db)
@@ -523,14 +591,13 @@ def startup() -> None:
 @app.on_event("startup")
 async def resume_pending_upload_liveness() -> None:
     with SessionLocal() as db:
-        _owner, base_url, management_key = liveness_pool_config_for_db(db)
-        if not base_url or not management_key:
-            return
         pending = list(
             db.execute(
                 select(ManagedFile.uploader_id, ManagedFile.id)
+                .join(Product, ManagedFile.product_id == Product.id)
                 .where(
                     ManagedFile.status == "available",
+                    Product.health_check_enabled.is_(True),
                     or_(
                         ManagedFile.account_status.is_(None),
                         ManagedFile.account_status == "",
@@ -579,20 +646,14 @@ def require_super_admin(current_user: User = Depends(require_admin)) -> User:
 
 
 def scope_managed_files(query, current_user: User):
-    if not current_user.is_super_admin:
-        query = query.where(ManagedFile.uploader_id == current_user.id)
     return query
 
 
 def scope_cards(query, current_user: User):
-    if not current_user.is_super_admin:
-        query = query.where(Card.creator_id == current_user.id)
     return query
 
 
 def scope_redemptions(query, current_user: User):
-    if not current_user.is_super_admin:
-        query = query.where(Redemption.card.has(Card.creator_id == current_user.id))
     return query
 
 
@@ -610,10 +671,6 @@ def message_url(path: str, message: str | None = None, error: str | None = None)
 
 def public_download_url(token: str) -> str:
     return f"{get_public_base_url()}/d/{token}"
-
-
-def sub2_liveness_embed_url() -> str:
-    return get_liveness_dashboard_url()
 
 
 def remove_temporary_file(path_value: str) -> None:
@@ -691,64 +748,6 @@ def apply_file_status(item: ManagedFile, target_status: str, timestamp: datetime
         item.voided_at = item.voided_at or timestamp
 
 
-def object_value(item: object, key: str, default: object = None) -> object:
-    if isinstance(item, dict):
-        return item.get(key, default)
-    return getattr(item, key, default)
-
-
-def uploaded_auth_filename(upload_result: object, fallback: str) -> str:
-    if isinstance(upload_result, dict):
-        for key in ("name", "filename", "file", "id"):
-            value = upload_result.get(key)
-            if isinstance(value, str) and value.strip():
-                return Path(value).name
-    return fallback
-
-
-def liveness_remote_auth_filename(item: ManagedFile, account_status: str | None = None) -> str:
-    marker = {
-        "available": "live",
-        "unavailable": "dead",
-        "checking": "check",
-    }.get(account_status or item.account_status or "", "check")
-    return f"cdk-{marker}-{item.id}-{json_download_name(item.original_name)}"
-
-
-def liveness_remote_auth_filenames(item: ManagedFile) -> set[str]:
-    return {
-        liveness_remote_auth_filename(item, "checking"),
-        liveness_remote_auth_filename(item, "available"),
-        liveness_remote_auth_filename(item, "unavailable"),
-        f"cdk-{item.id}-{json_download_name(item.original_name)}",
-    }
-
-
-def card_has_available_quota(card: object) -> bool:
-    if str(object_value(card, "status", "") or "").lower() != "success":
-        return False
-    windows = object_value(card, "windows", []) or []
-    if not isinstance(windows, list):
-        return False
-    for window in windows:
-        remaining = object_value(window, "remaining_percent")
-        try:
-            if remaining is not None and int(remaining) > 0:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
-
-
-def remote_account_error_label(card: object | None, fallback: str = "测活失败") -> str:
-    if not card:
-        return fallback
-    message = str(object_value(card, "status_message", "") or "").strip()
-    status = str(object_value(card, "status", "") or "").strip()
-    label = message or status or fallback
-    return label[:255]
-
-
 def liveness_pool_config(user: User | None) -> tuple[str, str]:
     if not user:
         return "", ""
@@ -781,37 +780,6 @@ def liveness_pool_config_for_db(db: Session) -> tuple[User | None, str, str]:
     return owner, base_url, management_key
 
 
-async def check_remote_file_account_status(client: CLIProxyClient, item: ManagedFile) -> tuple[bool, bool, str]:
-    remote_name = liveness_remote_auth_filename(item, "checking")
-    raw: bytes | None = None
-    is_available = False
-    error_label = ""
-    sync_failed = False
-    try:
-        raw = Path(item.stored_path).read_bytes()
-        upload_result = await client.upload_auth_file(remote_name, raw)
-        target = await client.codex_card_for_auth_file(uploaded_auth_filename(upload_result, remote_name))
-        is_available = card_has_available_quota(target) if target else False
-        if not is_available:
-            error_label = remote_account_error_label(target, "测活未通过")
-    except Exception as exc:
-        is_available = False
-        error_label = (str(exc) or "测活失败")[:255]
-    if raw is not None:
-        final_status = "available" if is_available else "unavailable"
-        final_name = liveness_remote_auth_filename(item, final_status)
-        try:
-            await client.upload_auth_file(final_name, raw)
-            for stale_name in liveness_remote_auth_filenames(item) - {final_name}:
-                try:
-                    await client.delete_auth_file(stale_name)
-                except Exception:
-                    pass
-        except Exception:
-            sync_failed = True
-    return is_available, sync_failed, error_label
-
-
 async def run_liveness_checks_for_files(
     db: Session,
     actor: User,
@@ -819,55 +787,43 @@ async def run_liveness_checks_for_files(
     timestamp: datetime | None = None,
     audit_action: str = "check_file_account_status",
 ) -> dict[str, int | str]:
-    _owner, base_url, management_key = liveness_pool_config_for_db(db)
-    if not base_url or not management_key:
-        raise ServiceError("请先由超级管理员在 cdk站点测活 页面配置专属 sub2 监测器")
     if len(files) > 50:
         raise ServiceError("单次最多检测 50 个文件")
 
     timestamp = timestamp or datetime.utcnow()
-    client = CLIProxyClient(base_url, management_key)
+    outcomes = await asyncio.to_thread(
+        run_file_health_checks_parallel,
+        [item.id for item in files],
+        actor.id,
+        audit_action,
+        timestamp,
+        4,
+        True,
+    )
+    db.expire_all()
     available = 0
     unavailable = 0
-    cleanup_errors = 0
-    for item in files:
-        is_available, cleanup_failed, error_label = await check_remote_file_account_status(client, item)
-        if cleanup_failed:
-            cleanup_errors += 1
-        item.account_status = "available" if is_available else "unavailable"
-        item.account_checked_at = timestamp
-        if is_available:
-            item.account_error = ""
-            item.account_error_label = ""
-            if item.status == "voided" and item.sold_card_id is None:
-                apply_file_status(item, "available", timestamp)
+    unknown = 0
+    for outcome in outcomes:
+        status = outcome.status
+        if status == HEALTH_ALIVE:
             available += 1
-        else:
-            label = error_label or "测活未通过"
-            item.account_error = label
-            item.account_error_label = label
+        elif status == HEALTH_DEAD:
             unavailable += 1
-        add_detail = f"{item.original_name}:{item.account_status}:{item.account_error_label or ''}"
-        if cleanup_failed:
-            add_detail += ":cleanup_failed"
-        add_audit(db, actor.id, audit_action, "file", item.id, add_detail)
+        elif status == HEALTH_UNKNOWN:
+            unknown += 1
 
-    message = f"已检测 {len(files)} 个文件：活 {available} 个，死 {unavailable} 个"
-    if cleanup_errors:
-        message += f"，其中 {cleanup_errors} 个远端临时文件删除失败"
+    message = f"已检测 {len(files)} 个文件：活 {available} 个，死 {unavailable} 个，暂时未知 {unknown} 个"
     return {
         "checked": len(files),
         "available": available,
         "unavailable": unavailable,
-        "cleanup_errors": cleanup_errors,
+        "unknown": unknown,
         "message": message,
     }
 
 
 async def sync_liveness_statuses(db: Session, timestamp: datetime) -> tuple[int, int, int]:
-    _owner, base_url, management_key = liveness_pool_config_for_db(db)
-    if not base_url or not management_key:
-        return 0, 0, 0
     users = list(
         db.scalars(
             select(User).where(
@@ -880,14 +836,15 @@ async def sync_liveness_statuses(db: Session, timestamp: datetime) -> tuple[int,
     unavailable = 0
     checked = 0
     stale_before = timestamp - LIVENESS_SYNC_INTERVAL
-    client = CLIProxyClient(base_url, management_key)
     for user in users:
         files = list(
             db.scalars(
                 select(ManagedFile)
+                .join(Product, ManagedFile.product_id == Product.id)
                 .where(
                     ManagedFile.uploader_id == user.id,
                     ManagedFile.status == "available",
+                    Product.health_check_enabled.is_(True),
                     (ManagedFile.account_checked_at.is_(None)) | (ManagedFile.account_checked_at <= stale_before),
                 )
                 .order_by(ManagedFile.account_checked_at.asc().nullsfirst(), ManagedFile.id.asc())
@@ -898,27 +855,71 @@ async def sync_liveness_statuses(db: Session, timestamp: datetime) -> tuple[int,
             user.liveness_last_sync_at = timestamp
             db.commit()
             continue
-        for item in files:
-            is_available, cleanup_failed, error_label = await check_remote_file_account_status(client, item)
-            item.account_status = "available" if is_available else "unavailable"
-            item.account_checked_at = timestamp
-            item.account_error = "" if is_available else error_label or "测活未通过"
-            if is_available:
-                item.account_error_label = ""
-                if item.status == "voided" and item.sold_card_id is None:
-                    apply_file_status(item, "available", timestamp)
+        outcomes = await asyncio.to_thread(
+            run_file_health_checks_parallel,
+            [item.id for item in files],
+            None,
+            "auto_liveness_sync",
+            timestamp,
+            4,
+            True,
+        )
+        db.expire_all()
+        for outcome in outcomes:
+            status = outcome.status
+            if status == HEALTH_ALIVE:
                 available += 1
-            else:
-                item.account_error_label = error_label or "测活未通过"
+            elif status == HEALTH_DEAD:
                 unavailable += 1
-            detail = f"{item.original_name}:{item.account_status}:{item.account_error_label or ''}"
-            if cleanup_failed:
-                detail += ":cleanup_failed"
-            add_audit(db, None, "auto_liveness_sync", "file", item.id, detail)
-            checked += 1
+            if status in {HEALTH_ALIVE, HEALTH_DEAD, HEALTH_UNKNOWN}:
+                checked += 1
         user.liveness_last_sync_at = timestamp
         db.commit()
     return checked, available, unavailable
+
+
+def clear_file_liveness_state(item: ManagedFile) -> None:
+    item.account_status = None
+    item.account_checked_at = None
+    item.account_error = ""
+    item.account_error_label = ""
+
+
+async def remove_redeemed_files_from_liveness_pool(download_path: str) -> None:
+    try:
+        with SessionLocal() as worker_db:
+            redemptions = list(
+                worker_db.scalars(select(Redemption).where(Redemption.download_path == download_path))
+            )
+            file_ids = {
+                int(value)
+                for redemption in redemptions
+                for value in (redemption.file_ids or "").split(",")
+                if value.strip().isdigit()
+            }
+            if not file_ids:
+                return
+            files = list(
+                worker_db.scalars(
+                    select(ManagedFile).where(
+                        ManagedFile.id.in_(file_ids),
+                        ManagedFile.status == "sold",
+                    )
+                )
+            )
+            for item in files:
+                clear_file_liveness_state(item)
+                add_audit(
+                    worker_db,
+                    None,
+                    "clear_redeemed_liveness_state",
+                    "file",
+                    item.id,
+                    item.original_name,
+                )
+            worker_db.commit()
+    except Exception:
+        logger.exception("Immediate redeemed-account liveness cleanup failed")
 
 
 async def drain_uploaded_liveness_queue() -> None:
@@ -926,7 +927,7 @@ async def drain_uploaded_liveness_queue() -> None:
     try:
         while True:
             batch: list[tuple[int, int]] = []
-            while len(batch) < 50:
+            while len(batch) < UPLOAD_LIVENESS_BATCH_SIZE:
                 try:
                     batch.append(_upload_liveness_queue.get_nowait())
                 except asyncio.QueueEmpty:
@@ -965,7 +966,8 @@ async def drain_uploaded_liveness_queue() -> None:
             finally:
                 for _ in batch:
                     _upload_liveness_queue.task_done()
-            await asyncio.sleep(0)
+            if not _upload_liveness_queue.empty():
+                await asyncio.sleep(UPLOAD_LIVENESS_BATCH_INTERVAL_SECONDS)
     finally:
         _upload_liveness_task = None
         if not _upload_liveness_queue.empty():
@@ -976,11 +978,22 @@ def schedule_uploaded_liveness(db: Session, actor_id: int, file_ids: list[int]) 
     global _upload_liveness_task
     if not file_ids:
         return 0
-    _owner, base_url, management_key = liveness_pool_config_for_db(db)
-    if not base_url or not management_key:
-        return 0
+    enabled_ids = {
+        file_id
+        for file_id in db.scalars(
+            select(ManagedFile.id)
+            .join(Product, ManagedFile.product_id == Product.id)
+            .where(
+                ManagedFile.id.in_(file_ids),
+                ManagedFile.status == "available",
+                Product.health_check_enabled.is_(True),
+            )
+        )
+    }
     queued = 0
     for file_id in dict.fromkeys(file_ids):
+        if file_id not in enabled_ids:
+            continue
         try:
             _upload_liveness_queue.put_nowait((actor_id, file_id))
             queued += 1
@@ -1023,7 +1036,11 @@ def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"request": request, "inventory": inventory_breakdown(db)},
+        {
+            "request": request,
+            "inventory": inventory_breakdown(db),
+            "delivery_products": public_delivery_products(db),
+        },
     )
 
 
@@ -1043,7 +1060,7 @@ def lookup_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/api/inventory")
-def api_inventory(db: Session = Depends(get_db)) -> dict[str, int]:
+def api_inventory(db: Session = Depends(get_db)) -> dict[str, object]:
     groups = inventory_breakdown(db)
     return {
         "inventory": groups["normal"],
@@ -1052,6 +1069,7 @@ def api_inventory(db: Session = Depends(get_db)) -> dict[str, int]:
         "problem": groups["problem"],
         "unchecked": groups["unchecked"],
         "total": groups["total"],
+        "products": public_delivery_products(db),
     }
 
 
@@ -1177,9 +1195,10 @@ async def api_redeem(
             "download_url": public_download_url(token),
             "filename": download_name,
             "expires_at": f"{link.expires_at.isoformat()}Z",
-            "expires_in": 86400,
+            "expires_in": int(DOWNLOAD_TTL.total_seconds()),
         },
         headers=SENSITIVE_DOWNLOAD_HEADERS,
+        background=BackgroundTask(remove_redeemed_files_from_liveness_pool, str(output_path)),
     )
 
 
@@ -1221,7 +1240,7 @@ async def api_lookup(
             "download_url": public_download_url(token),
             "filename": download_name,
             "expires_at": f"{link.expires_at.isoformat()}Z",
-            "expires_in": 86400,
+            "expires_in": int(DOWNLOAD_TTL.total_seconds()),
         },
         headers=SENSITIVE_DOWNLOAD_HEADERS,
     )
@@ -1279,7 +1298,7 @@ async def api_convert(
             "target_format": target_format.upper(),
             "account_count": account_count,
             "expires_at": f"{link.expires_at.isoformat()}Z",
-            "expires_in": 600,
+            "expires_in": int(CONVERT_DOWNLOAD_TTL.total_seconds()),
         },
         headers=SENSITIVE_DOWNLOAD_HEADERS,
     )
@@ -1429,16 +1448,174 @@ async def update_own_password(
     return redirect(message_url("/admin/login", message="密码已更新，请重新登录"))
 
 
-def scoped_inventory_groups(db: Session, current_user: User) -> dict[str, int]:
-    return inventory_breakdown(db, None if current_user.is_super_admin else current_user.id)
+def product_options(db: Session) -> list[Product]:
+    return list(db.scalars(select(Product).order_by(Product.status.asc(), Product.created_at.asc(), Product.id.asc())))
 
 
-def liveness_due_query(current_user: User, timestamp: datetime):
+def scoped_inventory_groups(db: Session, current_user: User, product_id: int | None = None) -> dict[str, int]:
+    return inventory_breakdown(db, product_id)
+
+
+def product_stats(db: Session, product: Product) -> dict[str, int]:
+    groups = inventory_breakdown(db, product.id)
+    pending_cards = db.scalar(
+        select(func.count()).select_from(Card).where(Card.product_id == product.id, Card.status == "pending")
+    ) or 0
+    sold_cards = db.scalar(
+        select(func.count()).select_from(Card).where(Card.product_id == product.id, Card.status == "sold")
+    ) or 0
+    redemptions = db.scalar(
+        select(func.count()).select_from(Redemption).where(Redemption.product_id == product.id)
+    ) or 0
+    return {
+        **groups,
+        "pending_cards": pending_cards,
+        "sold_cards": sold_cards,
+        "redemptions": redemptions,
+        "health_used_24h": product_health_used_last_24h(db, product.id),
+    }
+
+
+def validate_product_form(
+    name: str,
+    sku: str,
+    low_stock_threshold: int,
+    health_timeout_seconds: int,
+    health_daily_limit: int,
+) -> tuple[str, str]:
+    name = name.strip()
+    sku = sku.strip().lower()
+    if not name or len(name) > 120:
+        raise ServiceError("商品名称不能为空且不能超过 120 位")
+    if not sku or len(sku) > 80 or any(char in sku for char in "\\/\x00"):
+        raise ServiceError("SKU 不能为空、不能超过 80 位且不能包含路径分隔符")
+    if low_stock_threshold < 1 or low_stock_threshold > 9999:
+        raise ServiceError("低库存阈值必须在 1 到 9999 之间")
+    if health_timeout_seconds < 3 or health_timeout_seconds > 60:
+        raise ServiceError("单次测活时间必须在 3 到 60 秒之间")
+    if health_daily_limit < 0 or health_daily_limit > 100000:
+        raise ServiceError("24 小时测活次数必须在 0 到 100000 之间；0 表示不限制")
+    return name, sku
+
+
+@app.get("/admin/products", response_class=HTMLResponse)
+def products_page(
+    request: Request,
+    message: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    products = product_options(db)
+    stats_by_product = {product.id: product_stats(db, product) for product in products}
+    return templates.TemplateResponse(
+        request,
+        "products.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "products": products,
+            "stats_by_product": stats_by_product,
+            "message": message,
+            "error": error,
+            "product_statuses": [PRODUCT_DRAFT, PRODUCT_LISTED, PRODUCT_HIDDEN],
+        },
+    )
+
+
+@app.post("/admin/products")
+async def create_product_route(
+    name: Annotated[str, Form()],
+    sku: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    status: Annotated[str, Form()] = PRODUCT_DRAFT,
+    health_check_enabled: Annotated[str | None, Form()] = None,
+    health_timeout_seconds: Annotated[int, Form()] = 15,
+    health_daily_limit: Annotated[int, Form()] = 0,
+    low_stock_threshold: Annotated[int, Form()] = 3,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    try:
+        name, sku = validate_product_form(name, sku, low_stock_threshold, health_timeout_seconds, health_daily_limit)
+        if status not in {PRODUCT_DRAFT, PRODUCT_LISTED, PRODUCT_HIDDEN}:
+            raise ServiceError("商品状态无效")
+        if db.scalar(select(Product.id).where(func.lower(Product.sku) == sku.lower())):
+            raise ServiceError("SKU 已存在")
+        timestamp = datetime.utcnow()
+        product = Product(
+            name=name,
+            sku=sku,
+            description=description.strip()[:1000],
+            status=status,
+            health_check_enabled=health_check_enabled == "on",
+            health_timeout_seconds=health_timeout_seconds,
+            health_daily_limit=health_daily_limit,
+            low_stock_threshold=low_stock_threshold,
+            creator_id=current_user.id,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        db.add(product)
+        db.flush()
+        add_audit(db, current_user.id, "create_product", "product", product.id, product.sku)
+        db.commit()
+    except ServiceError as exc:
+        db.rollback()
+        return redirect(message_url("/admin/products", error=str(exc)))
+    return redirect(message_url("/admin/products", message=f"已创建商品 {product.name}"))
+
+
+@app.post("/admin/products/{product_id}")
+async def update_product_route(
+    product_id: int,
+    name: Annotated[str, Form()],
+    sku: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    status: Annotated[str, Form()] = PRODUCT_DRAFT,
+    health_check_enabled: Annotated[str | None, Form()] = None,
+    health_timeout_seconds: Annotated[int, Form()] = 15,
+    health_daily_limit: Annotated[int, Form()] = 0,
+    low_stock_threshold: Annotated[int, Form()] = 3,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    product = db.get(Product, product_id)
+    if not product:
+        return redirect(message_url("/admin/products", error="商品不存在"))
+    try:
+        name, sku = validate_product_form(name, sku, low_stock_threshold, health_timeout_seconds, health_daily_limit)
+        if status not in {PRODUCT_DRAFT, PRODUCT_LISTED, PRODUCT_HIDDEN}:
+            raise ServiceError("商品状态无效")
+        duplicate = db.scalar(select(Product.id).where(func.lower(Product.sku) == sku.lower(), Product.id != product.id))
+        if duplicate:
+            raise ServiceError("SKU 已存在")
+        product.name = name
+        product.sku = sku
+        product.description = description.strip()[:1000]
+        product.status = status
+        product.health_check_enabled = health_check_enabled == "on"
+        product.health_timeout_seconds = health_timeout_seconds
+        product.health_daily_limit = health_daily_limit
+        product.low_stock_threshold = low_stock_threshold
+        product.updated_at = datetime.utcnow()
+        add_audit(db, current_user.id, "update_product", "product", product.id, product.sku)
+        db.commit()
+    except ServiceError as exc:
+        db.rollback()
+        return redirect(message_url("/admin/products", error=str(exc)))
+    return redirect(message_url("/admin/products", message=f"已更新商品 {product.name}"))
+
+
+def liveness_due_query(current_user: User, timestamp: datetime, product_id: int | None = None):
     stale_before = timestamp - LIVENESS_SYNC_INTERVAL
-    query = select(ManagedFile).where(
+    query = select(ManagedFile).join(Product, ManagedFile.product_id == Product.id).where(
         ManagedFile.status == "available",
+        Product.health_check_enabled.is_(True),
         or_(ManagedFile.account_checked_at.is_(None), ManagedFile.account_checked_at <= stale_before),
     )
+    if product_id:
+        query = query.where(ManagedFile.product_id == product_id)
     return scope_managed_files(query, current_user)
 
 
@@ -1451,8 +1628,13 @@ LIVENESS_REFRESH_MODES = {
 }
 
 
-def liveness_refresh_query(current_user: User, timestamp: datetime, refresh_mode: str, selected_ids: set[int] | None = None):
-    query = select(ManagedFile).where(ManagedFile.status == "available")
+def liveness_refresh_query(current_user: User, timestamp: datetime, refresh_mode: str, selected_ids: set[int] | None = None, product_id: int | None = None):
+    query = select(ManagedFile).join(Product, ManagedFile.product_id == Product.id).where(
+        ManagedFile.status == "available",
+        Product.health_check_enabled.is_(True),
+    )
+    if product_id:
+        query = query.where(ManagedFile.product_id == product_id)
     if selected_ids:
         query = query.where(ManagedFile.id.in_(selected_ids))
     elif refresh_mode == "due":
@@ -1463,6 +1645,7 @@ def liveness_refresh_query(current_user: User, timestamp: datetime, refresh_mode
             or_(
                 ManagedFile.account_status.is_(None),
                 ManagedFile.account_status == "",
+                ManagedFile.account_status == HEALTH_CHECKING,
                 (ManagedFile.account_status == "available") & ManagedFile.account_checked_at.is_(None),
             )
         )
@@ -1479,22 +1662,26 @@ def liveness_refresh_query(current_user: User, timestamp: datetime, refresh_mode
 @app.get("/admin/liveness", response_class=HTMLResponse)
 def liveness_page(
     request: Request,
+    product_id: int | None = None,
     message: str | None = None,
     error: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_admin),
 ):
     timestamp = datetime.utcnow()
-    groups = scoped_inventory_groups(db, current_user)
-    config_owner, liveness_base_url, liveness_management_key = liveness_pool_config_for_db(db)
-    has_liveness_pool = bool(liveness_base_url and liveness_management_key)
-    due_total = db.scalar(select(func.count()).select_from(liveness_due_query(current_user, timestamp).subquery())) or 0
+    selected_product = db.get(Product, product_id) if product_id else None
+    selected_product_id = selected_product.id if selected_product else None
+    groups = scoped_inventory_groups(db, current_user, selected_product_id)
+    config_owner, _liveness_base_url, _liveness_management_key = liveness_pool_config_for_db(db)
+    due_total = db.scalar(select(func.count()).select_from(liveness_due_query(current_user, timestamp, selected_product_id).subquery())) or 0
     recent_query = scope_managed_files(
         select(ManagedFile)
-        .options(joinedload(ManagedFile.uploader), joinedload(ManagedFile.sold_card))
+        .options(joinedload(ManagedFile.uploader), joinedload(ManagedFile.sold_card), joinedload(ManagedFile.product))
         .where(ManagedFile.status == "available"),
         current_user,
     )
+    if selected_product_id:
+        recent_query = recent_query.where(ManagedFile.product_id == selected_product_id)
     recent_files = list(
         db.scalars(
             recent_query.order_by(
@@ -1515,18 +1702,22 @@ def liveness_page(
             "stats": {
                 "活": groups["healthy"],
                 "死": groups["problem"],
+                "暂时未知": groups["unknown"],
                 "待测文件": groups["unchecked"],
-                "20分钟到期": due_total,
+                "15分钟到期": due_total,
             },
             "recent_files": recent_files,
-            "has_liveness_pool": has_liveness_pool,
-            "can_config_liveness": current_user.is_super_admin,
-            "liveness_pool_base_url": liveness_base_url if current_user.is_super_admin else "",
-            "liveness_has_secret": bool(liveness_management_key) if current_user.is_super_admin else False,
-            "liveness_last_sync_at": current_user.liveness_last_sync_at,
-            "liveness_configured_at": config_owner.updated_at if config_owner and has_liveness_pool else None,
+            "products": product_options(db),
+            "selected_product_id": selected_product_id,
+            "health_ready": health_client_ready(),
+            "has_liveness_pool": True,
+            "can_config_liveness": True,
+            "liveness_pool_base_url": "",
+            "liveness_has_secret": False,
+            "liveness_last_sync_at": config_owner.liveness_last_sync_at if config_owner else None,
+            "liveness_configured_at": config_owner.updated_at if config_owner else None,
             "refresh_modes": LIVENESS_REFRESH_MODES,
-            "sub2_dashboard_url": sub2_liveness_embed_url() if current_user.is_super_admin and has_liveness_pool else "",
+            "sub2_dashboard_url": "",
         },
     )
 
@@ -1536,32 +1727,25 @@ async def update_liveness_pool_route(
     quota_pool_base_url: Annotated[str, Form()] = "",
     quota_pool_management_key: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
-    base_url = quota_pool_base_url.strip()
-    management_key = quota_pool_management_key.strip()
-    if len(base_url) > 500:
-        return redirect(message_url("/admin/liveness", error="号池地址不能超过 500 位"))
-    current_user.liveness_pool_base_url = base_url
-    if management_key:
-        current_user.liveness_pool_management_key = management_key
-    elif not base_url:
-        current_user.liveness_pool_management_key = ""
-    current_user.updated_at = datetime.utcnow()
-    add_audit(db, current_user.id, "update_liveness_pool", "user", current_user.id)
+    add_audit(db, current_user.id, "ignore_legacy_liveness_pool", "user", current_user.id)
     db.commit()
-    return redirect(message_url("/admin/liveness", message="cdk站点测活专属号池已保存"))
+    return redirect(message_url("/admin/liveness", message="已切换为内置 Codex 独立测活，无需配置 SUB2"))
 
 
 @app.post("/admin/liveness/upload-check")
 async def upload_and_check_liveness_route(
     file: Annotated[list[UploadFile], File()],
+    product_id: Annotated[int | None, Form()] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
-    _owner, base_url, management_key = liveness_pool_config_for_db(db)
-    if not base_url or not management_key:
-        return redirect(message_url("/admin/liveness", error="请先由超级管理员配置 cdk站点测活专属 sub2 监测器"))
+    product = db.get(Product, product_id) if product_id else ensure_legacy_product(db, current_user.id)
+    if not product:
+        return redirect(message_url("/admin/liveness", error="商品不存在"))
+    if not product.health_check_enabled:
+        return redirect(message_url("/admin/liveness", error="该商品未启用测活"))
     upload_slot = False
     try:
         try:
@@ -1571,14 +1755,14 @@ async def upload_and_check_liveness_route(
             raise ServiceError("已有导入任务正在处理，请稍后重试") from exc
         if not file:
             raise ServiceError("请选择要上传测活的文件")
-        buffered = await read_upload_batch(file, MAX_UPLOAD_BYTES, "单批上传文件总大小不能超过 25MB")
+        buffered = await read_upload_batch(file, MAX_UPLOAD_BYTES, "单批上传文件总大小不能超过 500MB")
         budget = ImportBudget(max_accounts=50, max_documents=50)
         imported_files: list[ManagedFile] = []
         all_errors: list[str] = []
         for upload, raw in buffered:
             filename = Path(upload.filename or "").name or "未命名文件"
             try:
-                items, errors = import_upload_files(db, current_user, upload.filename or "", raw, budget)
+                items, errors = import_upload_files(db, current_user, upload.filename or "", raw, product, budget)
                 imported_files.extend(items)
                 all_errors.extend(errors)
             except ServiceError as exc:
@@ -1611,7 +1795,7 @@ async def upload_and_check_liveness_route(
 async def check_liveness_route(
     ids: Annotated[list[int] | None, Form()] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
     selected_ids = set(ids or [])
     if not selected_ids:
@@ -1637,24 +1821,29 @@ async def check_liveness_route(
 
 @app.post("/admin/liveness/sync")
 async def sync_liveness_route(
+    product_id: Annotated[int | None, Form()] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
     timestamp = datetime.utcnow()
+    config_owner, _base_url, _management_key = liveness_pool_config_for_db(db)
+    selected_product_id = product_id if product_id and db.get(Product, product_id) else None
     files = list(
         db.scalars(
-            liveness_due_query(current_user, timestamp)
+            liveness_due_query(current_user, timestamp, selected_product_id)
             .order_by(ManagedFile.account_checked_at.asc().nullsfirst(), ManagedFile.id.asc())
             .limit(50)
         )
     )
     if not files:
-        current_user.liveness_last_sync_at = timestamp
+        if config_owner:
+            config_owner.liveness_last_sync_at = timestamp
         db.commit()
         return redirect(message_url("/admin/liveness", message="没有到期需要同步的账号状态"))
     try:
         result = await run_liveness_checks_for_files(db, current_user, files, timestamp, "manual_liveness_sync")
-        current_user.liveness_last_sync_at = timestamp
+        if config_owner:
+            config_owner.liveness_last_sync_at = timestamp
         db.commit()
     except ServiceError as exc:
         db.rollback()
@@ -1666,10 +1855,13 @@ async def sync_liveness_route(
 async def refresh_liveness_route(
     ids: Annotated[list[int] | None, Form()] = None,
     refresh_mode: Annotated[str, Form()] = "due",
+    product_id: Annotated[int | None, Form()] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
     timestamp = datetime.utcnow()
+    config_owner, _base_url, _management_key = liveness_pool_config_for_db(db)
+    selected_product_id = product_id if product_id and db.get(Product, product_id) else None
     selected_ids = set(ids or [])
     refresh_mode = "selected" if selected_ids else (refresh_mode or "due").strip()
     if refresh_mode not in LIVENESS_REFRESH_MODES:
@@ -1678,7 +1870,7 @@ async def refresh_liveness_route(
         return redirect(message_url("/admin/liveness", error="单次最多刷新 50 个账号"))
     files = list(
         db.scalars(
-            liveness_refresh_query(current_user, timestamp, refresh_mode, selected_ids or None)
+            liveness_refresh_query(current_user, timestamp, refresh_mode, selected_ids or None, selected_product_id)
             .order_by(ManagedFile.account_checked_at.asc().nullsfirst(), ManagedFile.id.asc())
             .limit(50)
         )
@@ -1686,12 +1878,14 @@ async def refresh_liveness_route(
     if selected_ids and len(files) != len(selected_ids):
         return redirect(message_url("/admin/liveness", error="部分文件不存在或无权限刷新"))
     if not files:
-        current_user.liveness_last_sync_at = timestamp
+        if config_owner:
+            config_owner.liveness_last_sync_at = timestamp
         db.commit()
         return redirect(message_url("/admin/liveness", message=f"{LIVENESS_REFRESH_MODES[refresh_mode]}没有可刷新额度的账号文件"))
     try:
         result = await run_liveness_checks_for_files(db, current_user, files, timestamp, "manual_liveness_refresh")
-        current_user.liveness_last_sync_at = timestamp
+        if config_owner:
+            config_owner.liveness_last_sync_at = timestamp
         db.commit()
     except ServiceError as exc:
         db.rollback()
@@ -1703,7 +1897,7 @@ async def refresh_liveness_route(
 async def delete_dead_liveness_files_route(
     ids: Annotated[list[int] | None, Form()] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
     timestamp = datetime.utcnow()
     selected_ids = set(ids or [])
@@ -1721,15 +1915,7 @@ async def delete_dead_liveness_files_route(
     if not files:
         empty_message = "选中的账号里没有可删除的死号" if selected_ids else "没有需要删除的死号"
         return redirect(message_url("/admin/liveness", message=empty_message))
-    _owner, base_url, management_key = liveness_pool_config_for_db(db)
-    client = CLIProxyClient(base_url, management_key) if base_url and management_key else None
-    remote_delete_errors = 0
     for item in files:
-        if client:
-            try:
-                await client.delete_auth_file(liveness_remote_auth_filename(item))
-            except Exception:
-                remote_delete_errors += 1
         apply_file_status(item, "voided", timestamp)
         add_audit(
             db,
@@ -1741,8 +1927,6 @@ async def delete_dead_liveness_files_route(
         )
     db.commit()
     message = f"已批量删除 {len(files)} 个死号"
-    if remote_delete_errors:
-        message += f"，其中 {remote_delete_errors} 个远端监测器文件删除失败"
     return redirect(message_url("/admin/liveness", message=message))
 
 
@@ -1777,16 +1961,8 @@ def admin_dashboard(
         TemporaryDownload.revoked_at.is_(None),
         TemporaryDownload.expires_at > datetime.utcnow(),
     )
-    if not current_user.is_super_admin:
-        active_links_query = active_links_query.where(
-            TemporaryDownload.redemption.has(
-                Redemption.card.has(Card.creator_id == current_user.id)
-            )
-        )
     active_links = db.scalar(select(func.count()).select_from(active_links_query.subquery())) or 0
     activity_query = select(AuditLog)
-    if not current_user.is_super_admin:
-        activity_query = activity_query.where(AuditLog.actor_id == current_user.id)
     recent_activity = list(db.scalars(activity_query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(12)))
     return templates.TemplateResponse(
         request,
@@ -1819,21 +1995,32 @@ def uploads_page(
     request: Request,
     message: str | None = None,
     error: str | None = None,
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
     return templates.TemplateResponse(
         request,
         "uploads.html",
-        {"request": request, "current_user": current_user, "message": message, "error": error},
+        {
+            "request": request,
+            "current_user": current_user,
+            "message": message,
+            "error": error,
+            "products": product_options(db),
+        },
     )
 
 
 @app.post("/admin/uploads")
 async def upload_file(
     file: Annotated[list[UploadFile], File()],
+    product_id: Annotated[int | None, Form()] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
+    product = db.get(Product, product_id) if product_id else ensure_legacy_product(db, current_user.id)
+    if not product:
+        return redirect(message_url("/admin/uploads", error="商品不存在"))
     upload_slot = False
     try:
         try:
@@ -1846,12 +2033,12 @@ async def upload_file(
         all_errors: list[str] = []
         if not file:
             raise ServiceError("请选择要上传的文件")
-        buffered = await read_upload_batch(file, MAX_UPLOAD_BYTES, "单批上传文件总大小不能超过 25MB")
+        buffered = await read_upload_batch(file, MAX_UPLOAD_BYTES, "单批上传文件总大小不能超过 500MB")
         budget = ImportBudget()
         for upload, raw in buffered:
             filename = Path(upload.filename or "").name or "未命名文件"
             try:
-                items, errors = import_upload_files(db, current_user, upload.filename or "", raw, budget)
+                items, errors = import_upload_files(db, current_user, upload.filename or "", raw, product, budget)
                 total_imported += len(items)
                 imported_file_ids.extend(item.id for item in items)
                 all_errors.extend(errors)
@@ -1883,9 +2070,13 @@ async def upload_file(
 async def upload_manual_json(
     payload: Annotated[str, Form()],
     filename: Annotated[str, Form()] = "manual-account.json",
+    product_id: Annotated[int | None, Form()] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
+    product = db.get(Product, product_id) if product_id else ensure_legacy_product(db, current_user.id)
+    if not product:
+        return redirect(message_url("/admin/uploads", error="商品不存在"))
     raw = payload.strip().encode("utf-8")
     if not raw:
         return redirect(message_url("/admin/uploads", error="请输入 JSON 内容"))
@@ -1898,7 +2089,7 @@ async def upload_manual_json(
     if Path(safe_name).suffix.lower() != ".json":
         safe_name = f"{safe_name}.json"
     try:
-        items, errors = import_upload_files(db, current_user, safe_name, raw, ImportBudget())
+        items, errors = import_upload_files(db, current_user, safe_name, raw, product, ImportBudget())
         imported = len(items)
         if not items:
             raise ServiceError("没有识别到可入库账号")
@@ -1924,6 +2115,7 @@ def files_page(
     request: Request,
     q: str | None = None,
     card_code: str | None = None,
+    product_id: int | None = None,
     status: str | None = None,
     account_status: str | None = None,
     start: str | None = None,
@@ -1938,11 +2130,13 @@ def files_page(
     page = normalize_page(page)
     page_size = normalize_page_size(page_size)
     query = scope_managed_files(
-        select(ManagedFile).options(joinedload(ManagedFile.sold_card), joinedload(ManagedFile.uploader)),
+        select(ManagedFile).options(joinedload(ManagedFile.sold_card), joinedload(ManagedFile.uploader), joinedload(ManagedFile.product)),
         current_user,
     )
     if q:
         query = query.where(ManagedFile.original_name.contains(q.strip()))
+    if product_id:
+        query = query.where(ManagedFile.product_id == product_id)
     if card_code:
         card = db.scalar(scope_cards(select(Card).where(Card.code == card_code.strip().upper()), current_user))
         query = query.where(ManagedFile.sold_card_id == (card.id if card else -1))
@@ -1953,6 +2147,7 @@ def files_page(
             or_(
                 ManagedFile.account_status.is_(None),
                 ManagedFile.account_status == "",
+                ManagedFile.account_status == HEALTH_CHECKING,
                 (ManagedFile.account_status == "available") & ManagedFile.account_checked_at.is_(None),
             )
         )
@@ -1982,11 +2177,13 @@ def files_page(
             "filters": {
                 "q": q or "",
                 "card_code": card_code or "",
+                "product_id": product_id or "",
                 "status": status or "",
                 "account_status": account_status or "",
                 "start": start or "",
                 "end": end or "",
             },
+            "products": product_options(db),
             "pagination": pagination,
         },
     )
@@ -2001,6 +2198,88 @@ async def void_files_route(
     count = void_files(db, current_user, ids or [])
     db.commit()
     return redirect(message_url("/admin/files", message=f"已作废 {count} 个文件"))
+
+
+@app.post("/admin/files/delete")
+async def delete_files_route(
+    request: Request,
+    ids: Annotated[list[int] | None, Form()] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    selected_ids = set(ids or [])
+    if not selected_ids:
+        return action_result(request, "/admin/files", error="请选择要删除的账号", status_code=400)
+    if len(selected_ids) > 100:
+        return action_result(request, "/admin/files", error="单次最多删除 100 个账号", status_code=400)
+
+    files = list(
+        db.scalars(
+            scope_managed_files(select(ManagedFile).where(ManagedFile.id.in_(selected_ids)), current_user)
+            .order_by(ManagedFile.id.asc())
+        )
+    )
+    if len(files) != len(selected_ids):
+        return action_result(request, "/admin/files", error="部分账号不存在或无权限删除", status_code=403)
+
+    redemption_filters = []
+    for file_id in selected_ids:
+        raw_id = str(file_id)
+        redemption_filters.extend(
+            [
+                Redemption.file_ids == raw_id,
+                Redemption.file_ids.like(f"{raw_id},%"),
+                Redemption.file_ids.like(f"%,{raw_id},%"),
+                Redemption.file_ids.like(f"%,{raw_id}"),
+            ]
+        )
+    referenced_ids: set[int] = set()
+    if redemption_filters:
+        for raw_ids in db.scalars(select(Redemption.file_ids).where(or_(*redemption_filters))):
+            referenced_ids.update(int(value) for value in raw_ids.split(",") if value.strip().isdigit())
+
+    blocked = [
+        item
+        for item in files
+        if item.status == "sold" or item.sold_card_id is not None or item.id in referenced_ids
+    ]
+    if blocked:
+        return action_result(
+            request,
+            "/admin/files",
+            error=f"有 {len(blocked)} 个账号已交付或被兑换记录引用，不能永久删除",
+            status_code=409,
+        )
+
+    stored_paths: list[str] = []
+    for item in files:
+        stored_paths.append(item.stored_path)
+        add_audit(
+            db,
+            current_user.id,
+            "delete_inventory_file",
+            "file",
+            item.id,
+            f"{item.original_name}:status={item.status}:account={item.account_status or 'unchecked'}",
+        )
+        db.delete(item)
+    db.commit()
+
+    upload_root = UPLOAD_DIR.resolve()
+    local_delete_errors = 0
+    for raw_path in stored_paths:
+        try:
+            path = Path(raw_path).resolve()
+            if path.is_relative_to(upload_root) and path.is_file():
+                path.unlink(missing_ok=True)
+        except OSError:
+            local_delete_errors += 1
+            logger.warning("failed to remove deleted inventory file", exc_info=True)
+
+    message = f"已永久删除 {len(files)} 个账号"
+    if local_delete_errors:
+        message += f"，本地文件清理异常 {local_delete_errors} 个"
+    return action_result(request, "/admin/files", message=message)
 
 
 @app.post("/admin/files/status")
@@ -2034,7 +2313,7 @@ async def check_files_account_status_route(
     request: Request,
     ids: Annotated[list[int] | None, Form()] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_admin),
 ):
     selected_ids = set(ids or [])
     if not selected_ids:
@@ -2061,6 +2340,7 @@ async def check_files_account_status_route(
                 "message": message,
                 "available": result["available"],
                 "unavailable": result["unavailable"],
+                "unknown": result.get("unknown", 0),
             }
         )
     return redirect(message_url("/admin/files", message=message))
@@ -2091,7 +2371,9 @@ async def download_files_route(
             item.sold_at = timestamp
         add_audit(db, current_user.id, "download_file", "file", item.id, item.original_name)
         db.commit()
-        return FileResponse(item.stored_path, media_type="application/json", filename=json_download_name(item.original_name))
+        download_path = DOWNLOAD_DIR / f"file-{item.id}-{timestamp.strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(6)}.json"
+        download_path.write_bytes(read_account_file(item.stored_path))
+        return FileResponse(download_path, media_type="application/json", filename=json_download_name(item.original_name))
     archive_path = DOWNLOAD_DIR / f"files_batch_{timestamp.strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         used_names: set[str] = set()
@@ -2100,7 +2382,7 @@ async def download_files_route(
             if arcname in used_names:
                 arcname = f"{item.id}_{arcname}"
             used_names.add(arcname)
-            archive.write(item.stored_path, arcname=arcname)
+            archive.writestr(arcname, read_account_file(item.stored_path))
     for item in files:
         item.latest_download_at = timestamp
         if mark_sold == "1" and item.status in {"available", "locked"}:
@@ -2115,6 +2397,7 @@ async def download_files_route(
 def cards_page(
     request: Request,
     q: str | None = None,
+    product_id: int | None = None,
     status: str | None = None,
     start: str | None = None,
     end: str | None = None,
@@ -2127,9 +2410,11 @@ def cards_page(
 ):
     page = normalize_page(page)
     page_size = normalize_page_size(page_size)
-    query = scope_cards(select(Card).options(joinedload(Card.creator)), current_user)
+    query = scope_cards(select(Card).options(joinedload(Card.creator), joinedload(Card.product)), current_user)
     if q:
         query = query.where(Card.code.contains(q.strip().upper()))
+    if product_id:
+        query = query.where(Card.product_id == product_id)
     if status == "expired":
         query = query.where(Card.expires_at.is_not(None), Card.expires_at <= datetime.utcnow())
     elif status:
@@ -2153,9 +2438,10 @@ def cards_page(
             "cards": cards,
             "message": message,
             "error": error,
-            "filters": {"q": q or "", "status": status or "", "start": start or "", "end": end or ""},
+            "filters": {"q": q or "", "product_id": product_id or "", "status": status or "", "start": start or "", "end": end or ""},
             "pagination": pagination,
             "current_time": datetime.utcnow(),
+            "products": product_options(db),
         },
     )
 
@@ -2200,6 +2486,8 @@ def card_redemptions_route(
 
 @app.post("/admin/cards/create")
 async def create_cards_route(
+    request: Request,
+    product_id: Annotated[int | None, Form()] = None,
     file_count: Annotated[int, Form()] = 1,
     quantity: Annotated[int, Form()] = 1,
     max_redemptions: Annotated[int, Form()] = 1,
@@ -2208,16 +2496,35 @@ async def create_cards_route(
     current_user: User = Depends(require_user),
 ):
     try:
+        product = db.get(Product, product_id) if product_id else ensure_legacy_product(db, current_user.id)
+        if not product:
+            raise ServiceError("商品不存在")
         parsed_expiration = parse_card_expiration(expires_at)
         validate_card_policy(max_redemptions, parsed_expiration)
-        cards = create_cards(db, current_user, file_count, quantity)
+        cards = create_cards(db, current_user, file_count, quantity, product)
         for card in cards:
             card.max_redemptions = max_redemptions
             card.expires_at = parsed_expiration
         db.commit()
     except ServiceError as exc:
         db.rollback()
+        if wants_json(request):
+            return JSONResponse(
+                {"ok": False, "error": str(exc)},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
         return redirect(message_url("/admin/cards", error=str(exc)))
+    if wants_json(request):
+        return JSONResponse(
+            {
+                "ok": True,
+                "count": len(cards),
+                "codes": [card.code for card in cards],
+                "filename": f"cdk_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt",
+            },
+            headers={"Cache-Control": "no-store"},
+        )
     return redirect(message_url("/admin/cards", message=f"已生成 {len(cards)} 张卡密，单码最多使用 {max_redemptions} 次"))
 
 
@@ -2253,7 +2560,7 @@ async def regenerate_redemption_link(
             "download_url": public_download_url(token),
             "filename": download_name,
             "expires_at": f"{link.expires_at.isoformat()}Z",
-            "expires_in": 86400,
+            "expires_in": int(DOWNLOAD_TTL.total_seconds()),
         },
         headers=SENSITIVE_DOWNLOAD_HEADERS,
     )

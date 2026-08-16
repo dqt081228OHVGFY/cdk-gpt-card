@@ -10,3 +10,4 @@ bcrypt==4.0.1
 itsdangerous==2.2.0
 pytest==9.0.3
 httpx==0.28.1
+cryptography==46.0.3

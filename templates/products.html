@@ -1,0 +1,132 @@
+{% extends "admin_base.html" %}
+{% block title %}商品管理{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <span class="page-index">PRODUCTS / 03</span>
+  <h1>商品管理</h1>
+  <p>每个商品独立绑定库存、CDK 和 Codex 测活开关。</p>
+</section>
+
+<section class="liveness-grid">
+  <form class="liveness-panel" method="post" action="/admin/products">
+    <div class="section-heading"><span>CREATE</span><h2>新建商品</h2></div>
+    <div class="field">
+      <label for="productName">商品名称</label>
+      <input id="productName" name="name" maxlength="120" required>
+    </div>
+    <div class="field">
+      <label for="productSku">SKU</label>
+      <input id="productSku" name="sku" maxlength="80" placeholder="codex-plus" required>
+    </div>
+    <div class="field">
+      <label for="productDescription">描述</label>
+      <textarea id="productDescription" name="description" rows="3"></textarea>
+    </div>
+    <div class="field">
+      <label for="productStatus">状态</label>
+      <select id="productStatus" name="status">
+        {% for status in product_statuses %}
+        <option value="{{ status }}" {% if status == "listed" %}selected{% endif %}>{{ status|product_status_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="productLowStock">低库存阈值</label>
+      <input id="productLowStock" name="low_stock_threshold" type="number" min="1" max="9999" value="3" required>
+    </div>
+    <div class="field">
+      <label for="productHealthTimeout">单次测活时间（秒）</label>
+      <input id="productHealthTimeout" name="health_timeout_seconds" type="number" min="3" max="60" value="15" required>
+    </div>
+    <div class="field">
+      <label for="productHealthDailyLimit">24h 测活次数上限</label>
+      <input id="productHealthDailyLimit" name="health_daily_limit" type="number" min="0" max="100000" value="0" required>
+      <small class="field-help">0 表示不限制</small>
+    </div>
+    <label class="toggle-line">
+      <input type="checkbox" name="health_check_enabled" checked>
+      <span>启用 Codex 独立测活</span>
+    </label>
+    <button class="primary-action compact" type="submit">创建商品</button>
+  </form>
+
+  <article class="liveness-panel monitor-status-panel">
+    <div class="section-heading"><span>RULES</span><h2>交付规则</h2></div>
+    <dl class="monitor-meta">
+      <div><dt>测活开启</dt><dd>兑换前确认活号，unknown 冷却 10 分钟</dd></div>
+      <div><dt>测活关闭</dt><dd>直接从可用库存交付</dd></div>
+      <div><dt>商品隐藏</dt><dd>已发 CDK 也不会继续兑换</dd></div>
+    </dl>
+  </article>
+</section>
+
+<section class="table-form list-form files-list-form">
+  <div class="table-actions split-actions">
+    <div class="readonly-actions">
+      <span class="monitor-state is-online"><span></span>商品级库存隔离</span>
+      <p class="muted-text">不提供删除商品，避免破坏历史兑换记录。</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>商品</th>
+          <th>SKU</th>
+          <th class="center">状态</th>
+          <th class="center">测活</th>
+          <th class="center">测活策略</th>
+          <th class="center">可交付</th>
+          <th class="center">活/死/未知/待测</th>
+          <th class="center">可用 CDK</th>
+          <th class="center">兑换</th>
+          <th class="center time-col">更新时间</th>
+          <th>编辑</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for product in products %}
+        {% set stats = stats_by_product[product.id] %}
+        <tr>
+          <td>
+            <strong>{{ product.name }}</strong>
+            {% if product.description %}<div class="muted-text">{{ product.description }}</div>{% endif %}
+          </td>
+          <td class="mono">{{ product.sku }}</td>
+          <td class="center"><span class="status {{ product.status }}">{{ product.status|product_status_label }}</span></td>
+          <td class="center"><span class="status {{ 'account-available' if product.health_check_enabled else 'account-unchecked' }}">{{ "开启" if product.health_check_enabled else "关闭" }}</span></td>
+          <td class="center">{{ product.health_timeout_seconds }}s / {{ stats.health_used_24h }}/{{ product.health_daily_limit if product.health_daily_limit else "不限" }}</td>
+          <td class="center">{{ stats.normal }}</td>
+          <td class="center">{{ stats.healthy }} / {{ stats.problem }} / {{ stats.unknown }} / {{ stats.unchecked }}</td>
+          <td class="center">{{ stats.pending_cards }}</td>
+          <td class="center">{{ stats.redemptions }}</td>
+          <td class="center time-col">{{ product.updated_at|full_dt }}</td>
+          <td>
+            <form class="inline-product-form" method="post" action="/admin/products/{{ product.id }}">
+              <input name="name" value="{{ product.name }}" required>
+              <input name="sku" value="{{ product.sku }}" required>
+              <input name="description" value="{{ product.description or '' }}">
+              <select name="status">
+                {% for status in product_statuses %}
+                <option value="{{ status }}" {% if product.status == status %}selected{% endif %}>{{ status|product_status_label }}</option>
+                {% endfor %}
+              </select>
+              <input name="low_stock_threshold" type="number" min="1" max="9999" value="{{ product.low_stock_threshold }}" required>
+              <input name="health_timeout_seconds" type="number" min="3" max="60" value="{{ product.health_timeout_seconds }}" required>
+              <input name="health_daily_limit" type="number" min="0" max="100000" value="{{ product.health_daily_limit }}" required>
+              <label class="toggle-line compact-toggle">
+                <input type="checkbox" name="health_check_enabled" {% if product.health_check_enabled %}checked{% endif %}>
+                <span>测活</span>
+              </label>
+              <button class="secondary-action slim" type="submit">保存</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" class="empty">暂无商品</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

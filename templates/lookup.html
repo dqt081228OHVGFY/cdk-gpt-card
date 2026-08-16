@@ -3,8 +3,6 @@
 {% block head %}<style>@view-transition { navigation: auto; }</style>{% endblock %}
 {% block body %}
 <main class="portal-shell">
-  <div id="lookupToast" class="toast" hidden role="status" aria-live="polite"></div>
-
   <header class="portal-header" data-portal-reveal>
     <a class="portal-brand" href="/" aria-label="GPT发卡网首页">
       <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
@@ -30,7 +28,7 @@
       <ul class="promise-list" aria-label="查找说明">
         <li><span>01</span><b>原码反查</b><small>无需再次消耗次数</small></li>
         <li><span>02</span><b>原文件</b><small>不更换绑定内容</small></li>
-        <li><span>03</span><b>临时链接</b><small>24 小时内下载</small></li>
+        <li><span>03</span><b>临时链接</b><small>下载后立即失效</small></li>
       </ul>
     </div>
 
@@ -50,7 +48,7 @@
             <small id="codeHint">每次查找一个 32 位兑换码</small>
           </div>
           <div class="code-input-wrap">
-            <textarea id="cardCode" name="card_code" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入已兑换的 32 位兑换码" aria-describedby="codeHint" required></textarea>
+            <textarea id="cardCode" name="card_code" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="5782046e350f522c7ac81297717ccb3b" aria-describedby="codeHint" required></textarea>
             <span data-code-count aria-hidden="true">0</span>
           </div>
         </div>
@@ -67,10 +65,10 @@
           <p id="deliveryFilename">-</p>
         </div>
         <a class="portal-primary compact" id="deliveryLink" href="#">下载原文件 <b aria-hidden="true">↓</b></a>
-        <div class="expiry-line"><span></span><b id="deliveryExpiry">链接将在 24:00:00 后失效</b></div>
+        <div class="expiry-line"><span></span><b>一次性链接，下载后立即失效</b></div>
       </section>
     </div>
   </section>
 </main>
-<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+<script src="{{ url_for('static', path='app.js') }}?v=exception-motion-20260721-1"></script>
 {% endblock %}

@@ -1,12 +1,96 @@
 function startRouteLoading() {
   document.body.classList.add("is-route-loading");
+  document.body.classList.add("is-admin-route-leaving");
 }
 
 function stopRouteLoading() {
   document.body.classList.remove("is-route-loading");
+  document.body.classList.remove("is-admin-route-leaving");
 }
 
 let activeApiRequests = 0;
+let adminNavigationPending = false;
+const prefersReducedAdminMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+const adminMotionDelay = prefersReducedAdminMotion ? 0 : 120;
+
+function i18nText(text) {
+  return window.CDKI18N?.text?.(text) || text;
+}
+
+function i18nKey(key, fallback) {
+  return window.CDKI18N?.t?.(key, fallback) || i18nText(fallback);
+}
+
+function i18nFormat(key, fallback, ...args) {
+  return window.CDKI18N?.format?.(key, fallback, ...args) || i18nText(fallback);
+}
+
+function markAdminArrival() {
+  try {
+    sessionStorage.setItem("admin-cross-navigation", "1");
+  } catch (_) {}
+}
+
+function navigateWithAdminExit(value, options = {}) {
+  if (adminNavigationPending) return;
+  const target = new URL(String(value || "/admin/login"), window.location.href);
+  if (target.origin !== window.location.origin) {
+    window.location.assign(target.href);
+    return;
+  }
+  adminNavigationPending = true;
+  markAdminArrival();
+  startRouteLoading();
+  const delay = prefersReducedAdminMotion ? 0 : Number(options.delay ?? adminMotionDelay);
+  window.setTimeout(() => {
+    if (options.replace) {
+      window.location.replace(target.href);
+    } else {
+      window.location.assign(target.href);
+    }
+  }, delay);
+}
+
+function reloadWithAdminExit(delay = adminMotionDelay) {
+  if (adminNavigationPending) return;
+  adminNavigationPending = true;
+  markAdminArrival();
+  startRouteLoading();
+  window.setTimeout(() => window.location.reload(), prefersReducedAdminMotion ? 0 : delay);
+}
+
+function adminRedirectError(url = "/admin/login") {
+  const error = new Error("登录状态已失效，即将重新进入");
+  error.redirectUrl = url;
+  return error;
+}
+
+async function readAdminJson(response, fallback = "请求失败") {
+  const contentType = response.headers.get("content-type") || "";
+  if (response.redirected) throw adminRedirectError(response.url || "/admin/login");
+  if (!contentType.includes("application/json")) {
+    if ([401, 403].includes(response.status) || contentType.includes("text/html")) {
+      throw adminRedirectError("/admin/login");
+    }
+    throw new Error("接口返回异常，请刷新页面后重试");
+  }
+  const data = await response.json();
+  if (!response.ok || data.ok === false) throw new Error(data.error || data.detail || fallback);
+  return data;
+}
+
+function showRequestError(error, fallback = "请求失败") {
+  if (error?.redirectUrl) {
+    showToast(error.message || "登录状态已失效，即将重新进入", "error", { kind: "session" });
+    window.setTimeout(() => navigateWithAdminExit(error.redirectUrl, { delay: 160, replace: true }), 760);
+    return;
+  }
+  if (error?.name === "AbortError") {
+    showToast("网络超时，请稍后重试", "error", { kind: "network" });
+    return;
+  }
+  showToast(error?.message || fallback);
+}
 
 function startApiLoading() {
   activeApiRequests += 1;
@@ -69,6 +153,8 @@ function shouldShowRouteLoadingForLink(link) {
 
 function shouldShowRouteLoadingForForm(form, submitter) {
   if (!form || form.dataset.noRouteProgress === "true") return false;
+  if (submitter?.matches("[data-confirm-card-action]") && submitter.dataset.confirmed !== "true") return false;
+  if (submitter?.matches("[data-status-update], [data-account-check], [data-card-download], [data-file-download]")) return false;
 
   const method = ((submitter?.getAttribute("formmethod") || form.method || "get")).toLowerCase();
   if (method === "dialog") return false;
@@ -92,11 +178,7 @@ document.addEventListener("click", (event) => {
   if (isModifiedClick(event)) return;
   const link = event.target.closest("a[href]");
   if (!shouldShowRouteLoadingForLink(link)) return;
-  if (hasNativeAdminTransition && document.body.classList.contains("admin-surface")) {
-    try {
-      sessionStorage.setItem("admin-cross-navigation", "1");
-    } catch (_) {}
-  }
+  if (hasNativeAdminTransition && document.body.classList.contains("admin-surface")) markAdminArrival();
   startRouteLoading();
 });
 
@@ -104,16 +186,13 @@ document.addEventListener("submit", (event) => {
   if (event.defaultPrevented) return;
   const submitter = event.submitter || document.activeElement;
   if (!shouldShowRouteLoadingForForm(event.target, submitter)) return;
-  if (hasNativeAdminTransition && document.body.classList.contains("admin-surface")) {
-    try {
-      sessionStorage.setItem("admin-cross-navigation", "1");
-    } catch (_) {}
-  }
+  if (hasNativeAdminTransition && document.body.classList.contains("admin-surface")) markAdminArrival();
   startRouteLoading();
 });
 
 window.addEventListener("pageshow", () => {
   activeApiRequests = 0;
+  adminNavigationPending = false;
   document.body.classList.remove("is-api-loading");
   stopRouteLoading();
 });
@@ -174,7 +253,9 @@ function openSearchableSelect(wrapper) {
   wrapper.classList.add("open");
   wrapper.querySelector(".system-select-button")?.setAttribute("aria-expanded", "true");
   const search = wrapper.querySelector(".system-select-search");
+  const options = wrapper.querySelector(".system-select-options");
   filterSearchableOptions(wrapper, "");
+  if (options) options.scrollTop = 0;
   if (search) {
     search.value = "";
     window.requestAnimationFrame(() => search.focus());
@@ -293,11 +374,11 @@ document.querySelectorAll("[data-compact-upload]").forEach((drop) => {
   input.addEventListener("change", () => {
     const files = Array.from(input.files || []);
     if (files.length === 0) {
-      label.textContent = "选择 JSON / CPA / SUB / SUB2 / ZIP";
+      label.textContent = i18nText("选择 JSON / CPA / SUB / SUB2 / ZIP");
     } else if (files.length === 1) {
       label.textContent = files[0].name;
     } else {
-      label.textContent = `已选择 ${files.length} 个文件`;
+      label.textContent = i18nFormat("selected_files_count", `已选择 ${files.length} 个文件`, files.length);
     }
   });
 });
@@ -316,10 +397,10 @@ function updateBulkActions(form) {
   if (!form) return;
   const selected = Array.from(form.querySelectorAll("input[type='checkbox'][name='ids']:checked"));
   const count = form.querySelector("[data-selected-count]");
-  if (count) count.textContent = `已选 ${selected.length} 个`;
+  if (count) count.textContent = i18nFormat("selected_items", `已选 ${selected.length} 个`, selected.length);
   const select = form.querySelector(".bulk-status-select");
   if (select) {
-    select.disabled = false;
+    select.disabled = selected.length === 0;
     const wrapper = select.closest(".system-select");
     if (wrapper) updateSearchableSelectButton(select, wrapper);
   }
@@ -353,6 +434,7 @@ document.querySelectorAll("[data-bulk-form]").forEach((form) => {
 
 let pendingConfirm = null;
 let overlayLockCount = 0;
+let confirmReturnFocus = null;
 
 function lockPageScroll() {
   overlayLockCount += 1;
@@ -371,7 +453,7 @@ function unlockPageScroll() {
 
 function recoverStaleScrollLock() {
   const activeOverlay = document.querySelector(
-    ".confirm-dialog:not([hidden]), .drawer.open[aria-hidden='false']",
+    ".confirm-dialog:not([hidden]), .drawer.open[aria-hidden='false'], .card-create-modal.open",
   );
   if (activeOverlay) return;
   overlayLockCount = 0;
@@ -380,7 +462,9 @@ function recoverStaleScrollLock() {
 }
 
 window.addEventListener("pageshow", recoverStaleScrollLock);
-document.addEventListener("wheel", recoverStaleScrollLock, { passive: true });
+window.addEventListener("focus", () => {
+  if (overlayLockCount > 0) recoverStaleScrollLock();
+});
 
 function setHiddenField(form, name, value) {
   let input = form.querySelector(`input[type="hidden"][name="${name}"]`);
@@ -397,40 +481,58 @@ function closeConfirmDialog() {
   const dialog = document.querySelector("[data-confirm-dialog]");
   const backdrop = document.querySelector("[data-confirm-backdrop]");
   if (!dialog || !backdrop) return;
-  dialog.hidden = true;
-  backdrop.hidden = true;
   dialog.classList.remove("open");
   backdrop.classList.remove("open");
   pendingConfirm = null;
-  unlockPageScroll();
+  window.clearTimeout(closeConfirmDialog.timer);
+  closeConfirmDialog.timer = window.setTimeout(() => {
+    dialog.hidden = true;
+    backdrop.hidden = true;
+    unlockPageScroll();
+    confirmReturnFocus?.focus?.({ preventScroll: true });
+    confirmReturnFocus = null;
+  }, prefersReducedAdminMotion ? 1 : 240);
 }
 
 function cancelConfirmDialog() {
   closeConfirmDialog();
 }
 
-function openConfirmDialog(message, onChoice, yesLabel = "确认", noLabel = "取消") {
+function openConfirmDialog(message, onChoice, yesLabel = "确认", noLabel = "取消", title = "确认操作") {
   const dialog = document.querySelector("[data-confirm-dialog]");
   const backdrop = document.querySelector("[data-confirm-backdrop]");
-  const messageNode = document.querySelector("[data-confirm-message]");
-  const yesButton = document.querySelector("[data-confirm-yes]");
-  const noButton = document.querySelector("[data-confirm-no]");
+  const messageNode = dialog?.querySelector("[data-confirm-message]");
+  const titleNode = dialog?.querySelector("[data-confirm-title]");
+  const yesButton = dialog?.querySelector("[data-confirm-yes]");
+  const noButton = dialog?.querySelector("[data-confirm-no]");
   if (!dialog || !backdrop || !messageNode || !yesButton || !noButton) {
     onChoice(false);
     return;
   }
+  window.clearTimeout(closeConfirmDialog.timer);
   pendingConfirm = onChoice;
-  messageNode.textContent = message;
-  yesButton.textContent = yesLabel;
-  noButton.textContent = noLabel;
+  confirmReturnFocus = document.activeElement;
+  const isDanger = /删除|禁用|作废|不可恢复|危险|delete|disable|void|danger/i.test(message);
+  messageNode.textContent = i18nText(message);
+  if (titleNode) titleNode.textContent = i18nText(title);
+  yesButton.textContent = i18nText(yesLabel);
+  noButton.textContent = i18nText(noLabel);
+  dialog.dataset.tone = isDanger ? "danger" : "neutral";
+  yesButton.classList.toggle("danger-action", isDanger);
+  yesButton.classList.toggle("secondary-action", !isDanger);
   lockPageScroll();
+  backdrop.classList.remove("open");
+  dialog.classList.remove("open");
   backdrop.hidden = false;
   dialog.hidden = false;
-  requestAnimationFrame(() => {
+  void dialog.offsetWidth;
+  const reveal = () => {
+    if (dialog.hidden) return;
     backdrop.classList.add("open");
     dialog.classList.add("open");
-    yesButton.focus();
-  });
+    yesButton.focus({ preventScroll: true });
+  };
+  requestAnimationFrame(reveal);
 }
 
 function resolveConfirmDialog(choice) {
@@ -462,6 +564,10 @@ async function downloadWithOptionalRefresh(form, submitter, fieldName, shouldMar
       body: formData,
       credentials: "same-origin",
     });
+    const contentType = response.headers.get("content-type") || "";
+    if (response.redirected || ([401, 403].includes(response.status) && contentType.includes("text/html"))) {
+      throw adminRedirectError(response.url || "/admin/login");
+    }
     if (!response.ok) throw new Error("下载失败，请刷新后重试");
 
     const blob = await response.blob();
@@ -475,10 +581,10 @@ async function downloadWithOptionalRefresh(form, submitter, fieldName, shouldMar
     URL.revokeObjectURL(url);
 
     if (shouldMark) {
-      window.setTimeout(() => window.location.reload(), 300);
+      reloadWithAdminExit(300);
     }
   } catch (error) {
-    showToast(error.message || "下载失败，请刷新后重试");
+    showRequestError(error, "下载失败，请刷新后重试");
   } finally {
     submitter.disabled = false;
   }
@@ -499,16 +605,11 @@ async function submitStatusUpdate(form, submitter) {
         "X-Requested-With": "fetch",
       },
     });
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      throw new Error("接口返回异常，请刷新页面后重试");
-    }
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "修改状态失败");
+    const data = await readAdminJson(response, "修改状态失败");
     showToast(data.message || "状态已修改", "success");
-    window.setTimeout(() => window.location.reload(), 450);
+    window.setTimeout(() => reloadWithAdminExit(160), 450);
   } catch (error) {
-    showToast(error.message || "修改状态失败");
+    showRequestError(error, "修改状态失败");
     submitter.disabled = false;
   }
 }
@@ -528,16 +629,11 @@ async function submitAccountStatusCheck(form, submitter) {
         "X-Requested-With": "fetch",
       },
     });
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      throw new Error("接口返回异常，请刷新页面后重试");
-    }
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "账号状态检测失败");
+    const data = await readAdminJson(response, "账号状态检测失败");
     showToast(data.message || "账号状态已检测", "success");
-    window.setTimeout(() => window.location.reload(), 650);
+    window.setTimeout(() => reloadWithAdminExit(160), 650);
   } catch (error) {
-    showToast(error.message || "账号状态检测失败");
+    showRequestError(error, "账号状态检测失败");
     submitter.disabled = false;
   }
 }
@@ -556,6 +652,8 @@ document.querySelectorAll("[data-bulk-form]").forEach((form) => {
           window.setTimeout(() => delete submitter.dataset.confirmed, 0);
         },
         submitter.dataset.confirmLabel || "确认",
+        "取消",
+        submitter.dataset.confirmTitle || submitter.dataset.confirmLabel || "确认操作",
       );
       return;
     }
@@ -575,9 +673,9 @@ document.querySelectorAll("[data-bulk-form]").forEach((form) => {
       downloadWithOptionalRefresh(form, submitter);
       return;
     }
-    openConfirmDialog("下载的文件是否标记已使用？", (shouldMarkSold) => {
+    openConfirmDialog("下载后可选择是否同时标记这些账号已使用。", (shouldMarkSold) => {
       downloadWithOptionalRefresh(form, submitter, "mark_sold", shouldMarkSold);
-    }, "标记已使用", "仅下载");
+    }, "标记已使用", "仅下载", "下载选项");
   });
 });
 
@@ -585,6 +683,27 @@ document.querySelector("[data-confirm-yes]")?.addEventListener("click", () => re
 document.querySelector("[data-confirm-no]")?.addEventListener("click", () => resolveConfirmDialog(false));
 document.querySelector("[data-confirm-close]")?.addEventListener("click", cancelConfirmDialog);
 document.querySelector("[data-confirm-backdrop]")?.addEventListener("click", cancelConfirmDialog);
+document.addEventListener("keydown", (event) => {
+  const dialog = document.querySelector("[data-confirm-dialog]");
+  if (!dialog || dialog.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    cancelConfirmDialog();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const controls = Array.from(dialog.querySelectorAll("button:not(:disabled), [href], input:not(:disabled)"));
+  if (!controls.length) return;
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 async function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) {
@@ -601,6 +720,232 @@ async function copyText(text) {
   document.execCommand("copy");
   input.remove();
 }
+
+const cardCreateState = {
+  codes: [],
+  filename: "",
+  returnFocus: null,
+  refreshOnClose: false,
+};
+
+function generatedCardCodes(payload) {
+  const source = Array.isArray(payload?.codes)
+    ? payload.codes
+    : Array.isArray(payload?.cards)
+      ? payload.cards
+      : [];
+  const seen = new Set();
+  return source
+    .map((item) => String(typeof item === "string" ? item : item?.code || "").trim())
+    .filter((code) => /^[0-9a-f]{32}$/i.test(code))
+    .filter((code) => {
+      const normalized = code.toLowerCase();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+}
+
+function renderCardCreateCodes(codes) {
+  const list = document.querySelector("[data-card-create-list]");
+  const count = document.querySelector("[data-card-create-count]");
+  const summary = document.querySelector("[data-card-create-summary]");
+  if (!list || !count || !summary) return;
+
+  count.textContent = i18nFormat("generated_count", `${codes.length} 个`, codes.length);
+  summary.textContent = i18nFormat("generated_codes", `已创建 ${codes.length} 个兑换码`, codes.length);
+  const fragment = document.createDocumentFragment();
+  codes.forEach((code, index) => {
+    const row = document.createElement("div");
+    row.className = index < 12 ? "card-create-item motion-item" : "card-create-item";
+    row.setAttribute("role", "listitem");
+    row.style.setProperty("--card-index", String(Math.min(index, 10)));
+
+    const value = document.createElement("code");
+    value.className = "card-create-item-code";
+    value.textContent = code;
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "card-create-item-copy";
+    copy.dataset.cardCreateCopyOne = code;
+    copy.textContent = i18nText("复制");
+    copy.setAttribute("aria-label", `${i18nText("复制兑换码")} ${code}`);
+    row.append(value, copy);
+    fragment.appendChild(row);
+  });
+  list.replaceChildren(fragment);
+  list.scrollTop = 0;
+}
+
+function openCardCreateModal(codes, filename = "") {
+  const modal = document.querySelector("[data-card-create-modal]");
+  const backdrop = document.querySelector("[data-card-create-backdrop]");
+  if (!modal || !backdrop || codes.length === 0) return;
+
+  cardCreateState.codes = codes;
+  cardCreateState.filename = filename;
+  cardCreateState.refreshOnClose = true;
+  renderCardCreateCodes(codes);
+  closeDrawers();
+  lockPageScroll();
+  modal.dataset.scrollLocked = "true";
+  backdrop.classList.remove("open");
+  modal.classList.remove("open");
+  modal.hidden = false;
+  backdrop.hidden = false;
+  void modal.offsetWidth;
+  const reveal = () => {
+    if (modal.hidden) return;
+    backdrop.classList.add("open");
+    modal.classList.add("open");
+    modal.querySelector("[data-card-create-close]")?.focus({ preventScroll: true });
+  };
+  requestAnimationFrame(reveal);
+}
+
+function closeCardCreateModal() {
+  const modal = document.querySelector("[data-card-create-modal]");
+  const backdrop = document.querySelector("[data-card-create-backdrop]");
+  if (!modal || !backdrop || modal.hidden) return;
+
+  modal.classList.remove("open");
+  backdrop.classList.remove("open");
+  if (modal.dataset.scrollLocked === "true") {
+    delete modal.dataset.scrollLocked;
+    unlockPageScroll();
+  }
+  window.clearTimeout(closeCardCreateModal.timer);
+  closeCardCreateModal.timer = window.setTimeout(() => {
+    modal.hidden = true;
+    backdrop.hidden = true;
+    if (cardCreateState.refreshOnClose) {
+      cardCreateState.refreshOnClose = false;
+      reloadWithAdminExit(120);
+      return;
+    }
+    cardCreateState.returnFocus?.focus?.();
+  }, 330);
+}
+
+function generatedCardsFilename() {
+  if (cardCreateState.filename) return cardCreateState.filename;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "");
+  return `cdk-${timestamp}-${cardCreateState.codes.length}.txt`;
+}
+
+function setTemporaryButtonLabel(button, label, duration = 1200) {
+  if (!button) return;
+  const labelNode = button.querySelector("span:last-child") || button;
+  const original = labelNode.textContent;
+  labelNode.textContent = label;
+  button.classList.add("is-complete");
+  window.clearTimeout(button._labelTimer);
+  button._labelTimer = window.setTimeout(() => {
+    labelNode.textContent = original;
+    button.classList.remove("is-complete");
+  }, duration);
+}
+
+const cardCreateForm = document.querySelector('form[action="/admin/cards/create"]');
+cardCreateForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submitter = event.submitter || cardCreateForm.querySelector('button[type="submit"]');
+  if (!submitter || submitter.disabled) return;
+
+  cardCreateState.returnFocus = document.querySelector('[data-drawer-open="cardDrawer"]');
+  const originalLabel = submitter.textContent;
+  submitter.disabled = true;
+  submitter.classList.add("is-loading");
+  submitter.textContent = `${i18nText("正在生成")}...`;
+
+  try {
+    const response = await fetch(cardCreateForm.action, {
+      method: "POST",
+      body: new FormData(cardCreateForm),
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "X-Requested-With": "fetch",
+      },
+    });
+    const data = await readAdminJson(response, "生成卡密失败");
+    const codes = generatedCardCodes(data);
+    if (codes.length === 0) throw new Error("卡密已生成，但服务器未返回生成结果");
+
+    cardCreateForm.reset();
+    openCardCreateModal(codes, String(data.filename || ""));
+  } catch (error) {
+    showRequestError(error, "生成卡密失败");
+  } finally {
+    submitter.disabled = false;
+    submitter.classList.remove("is-loading");
+    submitter.textContent = originalLabel;
+  }
+});
+
+document.querySelector("[data-card-create-copy]")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  try {
+    await copyText(cardCreateState.codes.join("\n"));
+    setTemporaryButtonLabel(button, i18nText("已复制"));
+    showToast(`已复制 ${cardCreateState.codes.length} 个兑换码`, "success");
+  } catch (error) {
+    showToast("复制失败，请逐条复制");
+  }
+});
+
+document.querySelector("[data-card-create-list]")?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-card-create-copy-one]");
+  if (!button) return;
+  try {
+    await copyText(button.dataset.cardCreateCopyOne || "");
+    const original = button.textContent;
+    button.textContent = i18nText("已复制");
+    window.setTimeout(() => {
+      button.textContent = original;
+    }, 900);
+  } catch (error) {
+    showToast("复制失败，请手动复制");
+  }
+});
+
+document.querySelector("[data-card-create-download]")?.addEventListener("click", (event) => {
+  if (cardCreateState.codes.length === 0) return;
+  const button = event.currentTarget;
+  const blob = new Blob([`${cardCreateState.codes.join("\n")}\n`], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = generatedCardsFilename();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  setTemporaryButtonLabel(button, i18nText("已下载"));
+});
+
+document.querySelector("[data-card-create-close]")?.addEventListener("click", closeCardCreateModal);
+document.querySelector("[data-card-create-backdrop]")?.addEventListener("click", closeCardCreateModal);
+document.querySelector("[data-card-create-modal]")?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCardCreateModal();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = Array.from(event.currentTarget.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled)"));
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-copy-text]");
@@ -675,7 +1020,7 @@ document.addEventListener("click", (event) => {
     fields.appendChild(input);
   });
   idsContainer.replaceChildren(fields);
-  selectedLabel.textContent = `将更新 ${selected.length} 张卡密`;
+  selectedLabel.textContent = i18nFormat("policy_selected", `将更新 ${selected.length} 张卡密`, selected.length);
   openDrawerElement(drawer);
 });
 
@@ -696,11 +1041,11 @@ function renderUsageDetails(data) {
   const redemptions = Array.isArray(data.redemptions) ? data.redemptions : [];
   usageCount.textContent = String(data.redemption_count ?? redemptions.length);
   usageMax.textContent = String(data.max_redemptions ?? 1);
-  usageExpires.textContent = data.expires_at || "永不过期";
+  usageExpires.textContent = data.expires_at || i18nText("永不过期");
   if (redemptions.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "暂无使用记录";
+    empty.textContent = i18nText("暂无使用记录");
     list.appendChild(empty);
     return;
   }
@@ -711,7 +1056,7 @@ function renderUsageDetails(data) {
 
     const main = document.createElement("div");
     const label = document.createElement("span");
-    label.textContent = `第 ${index + 1} 次使用 · ${item.file_count || 0} 个文件`;
+    label.textContent = i18nFormat("usage_item", `第 ${index + 1} 次使用 · ${item.file_count || 0} 个文件`, index + 1, item.file_count || 0);
     const time = document.createElement("strong");
     time.textContent = item.redeemed_at || "-";
     main.append(label, time);
@@ -723,7 +1068,7 @@ function renderUsageDetails(data) {
     const action = document.createElement("button");
     action.type = "button";
     action.className = "ghost-action mini usage-link-action";
-    action.textContent = "生成下载链接";
+    action.textContent = i18nText("生成下载链接");
     action.dataset.redemptionLink = String(item.id || "");
 
     row.append(main, format, action);
@@ -736,7 +1081,7 @@ async function openUsageDetails(button) {
   if (!drawer || button.disabled) return;
 
   renderUsageDetails({
-    card_code: "加载中...",
+    card_code: i18nText("加载中..."),
     first_used_at: "-",
     redemptions: [],
   });
@@ -751,11 +1096,10 @@ async function openUsageDetails(button) {
         "X-Requested-With": "fetch",
       },
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "使用详情加载失败");
+    const data = await readAdminJson(response, "使用详情加载失败");
     renderUsageDetails(data);
   } catch (error) {
-    showToast(error.message || "使用详情加载失败");
+    showRequestError(error, "使用详情加载失败");
   } finally {
     button.disabled = false;
   }
@@ -770,26 +1114,25 @@ document.querySelector("[data-usage-list]")?.addEventListener("click", async (ev
   const button = event.target.closest("[data-redemption-link]");
   if (!button || button.disabled) return;
   button.disabled = true;
-  button.textContent = "正在生成";
+  button.textContent = i18nText("正在生成");
   try {
     const response = await fetch(`/admin/redemptions/${button.dataset.redemptionLink}/link`, {
       method: "POST",
       credentials: "same-origin",
       headers: { Accept: "application/json", "X-Requested-With": "fetch" },
     });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || "生成失败");
+    const data = await readAdminJson(response, "生成失败");
     const link = document.createElement("a");
     link.className = "secondary-action mini usage-download-link";
     link.href = data.download_url;
-    link.textContent = "下载文件 · 24h";
+    link.textContent = i18nText("下载文件 · 一次性");
     link.setAttribute("download", data.filename || "");
     button.replaceWith(link);
-    showToast("24 小时下载链接已生成", "success");
+    showToast("一次性下载链接已生成，下载后立即失效", "success");
   } catch (error) {
     button.disabled = false;
-    button.textContent = "重新生成";
-    showToast(error.message || "生成下载链接失败");
+    button.textContent = i18nText("重新生成");
+    showRequestError(error, "生成下载链接失败");
   }
 });
 
@@ -843,28 +1186,97 @@ document.querySelectorAll("[data-drawer-close]").forEach((button) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    closeToast();
+    closeCardCreateModal();
     closeDrawers();
     if (pendingConfirm) cancelConfirmDialog();
   }
 });
 
-function showToast(message, type = "error") {
-  const toast = document.querySelector("#adminToast");
-  if (!toast) return;
-  toast.hidden = false;
-  toast.textContent = message;
-  toast.className = `toast ${type} show`;
+let toastReturnFocus = null;
+
+function closeToast() {
+  const toast = document.querySelector("[data-site-notice]");
+  const backdrop = document.querySelector("[data-site-notice-backdrop]");
+  if (!toast || toast.hidden || !toast.classList.contains("show")) return;
   window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => {
-    toast.classList.remove("show");
-    window.setTimeout(() => {
-      toast.hidden = true;
-    }, 180);
-  }, 2600);
+  window.clearTimeout(showToast.hideTimer);
+  toast.classList.remove("show");
+  backdrop?.classList.remove("show");
+  const shouldRestoreFocus = toast.contains(document.activeElement);
+  showToast.hideTimer = window.setTimeout(() => {
+    toast.hidden = true;
+    if (backdrop) backdrop.hidden = true;
+    if (shouldRestoreFocus) toastReturnFocus?.focus?.({ preventScroll: true });
+  }, 240);
 }
 
-document.querySelectorAll(".page-flash").forEach((flash) => {
-  showToast(flash.textContent.trim(), flash.dataset.toastType || "success");
+function showToast(message, type = "error", options = {}) {
+  const toast = document.querySelector("[data-site-notice]");
+  if (!toast) return;
+  const normalizedType = type === "success" ? "success" : "error";
+  const backdrop = document.querySelector("[data-site-notice-backdrop]");
+  const messageNode = toast.querySelector("[data-site-notice-message]");
+  const title = toast.querySelector("[data-site-notice-title]");
+  const kicker = toast.querySelector("[data-site-notice-kicker]");
+  const mark = toast.querySelector("[data-site-notice-mark] span");
+  const close = toast.querySelector("[data-site-notice-close]");
+  const kind = String(options.kind || (normalizedType === "error" ? "general" : "success"));
+  toastReturnFocus = document.activeElement;
+  window.clearTimeout(showToast.timer);
+  window.clearTimeout(showToast.hideTimer);
+  const wasVisible = !toast.hidden && toast.classList.contains("show");
+  toast.classList.remove("show", "success", "error", "exception");
+  backdrop?.classList.remove("show");
+  toast.hidden = false;
+  if (backdrop) backdrop.hidden = false;
+  toast.dataset.noticeKind = kind;
+  if (messageNode) messageNode.textContent = i18nText(message);
+  if (title) title.textContent = normalizedType === "success" ? i18nText("操作完成") : i18nKey("notice_error_title", "操作未完成");
+  if (kicker) kicker.textContent = normalizedType === "success" ? "SUCCESS" : i18nKey("notice_error_kicker", "ACTION BLOCKED");
+  if (mark) mark.textContent = normalizedType === "success" ? "✓" : "!";
+  const confirm = toast.querySelector("[data-site-notice-confirm]");
+  if (confirm) confirm.textContent = i18nKey("notice_confirm", "知道了");
+  toast.classList.add(normalizedType);
+  toast.classList.toggle("exception", normalizedType === "error");
+  if (wasVisible) void toast.offsetWidth;
+  const reveal = () => {
+    if (toast.hidden) return;
+    backdrop?.classList.add("show");
+    toast.classList.add("show");
+    close?.focus({ preventScroll: true });
+  };
+  requestAnimationFrame(reveal);
+  showToast.timer = window.setTimeout(closeToast, 4200);
+}
+
+document.querySelectorAll("[data-site-notice-close], [data-site-notice-confirm]").forEach((button) => {
+  button.addEventListener("click", closeToast);
+});
+document.querySelector("[data-site-notice-backdrop]")?.addEventListener("click", closeToast);
+document.addEventListener("keydown", (event) => {
+  const toast = document.querySelector("[data-site-notice]");
+  if (!toast || toast.hidden) return;
+  if (event.key === "Escape") {
+    closeToast();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = Array.from(toast.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled)"));
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+document.querySelectorAll("[data-site-flash], .page-flash").forEach((flash) => {
+  showToast(flash.textContent.trim(), flash.dataset.messageType || flash.dataset.toastType || "success");
   flash.remove();
 });
 
@@ -879,7 +1291,7 @@ document.querySelectorAll("[data-upload-form]").forEach((form) => {
   const summary = form.querySelector("[data-upload-summary]");
   const list = form.querySelector("[data-upload-list]");
   const submit = form.querySelector("[data-upload-submit]");
-  const maxBytes = 25 * 1024 * 1024;
+  const maxBytes = 500 * 1024 * 1024;
   const maxFiles = 100;
   if (!input || !summary || !list || !submit) return;
 
@@ -906,7 +1318,7 @@ document.querySelectorAll("[data-upload-form]").forEach((form) => {
       const item = document.createElement("li");
       const name = document.createElement("span");
       const size = document.createElement("span");
-      name.textContent = `另有 ${files.length - 8} 个文件`;
+      name.textContent = i18nFormat("uploaded_more", `另有 ${files.length - 8} 个文件`, files.length - 8);
       size.textContent = "";
       item.append(name, size);
       list.appendChild(item);
@@ -918,17 +1330,17 @@ document.querySelectorAll("[data-upload-form]").forEach((form) => {
     submit.disabled = files.length === 0 || isOversized || hasTooManyFiles || invalidFiles.length > 0 || uploadableFiles.length === 0;
 
     if (files.length === 0) {
-      summary.textContent = "尚未选择文件";
+      summary.textContent = i18nText("尚未选择文件");
     } else if (invalidFiles.length > 0) {
-      summary.textContent = "只能上传 JSON、CPA、SUB、SUB2 或 ZIP 文件";
+      summary.textContent = i18nText("只能上传 JSON、CPA、SUB、SUB2 或 ZIP 文件");
     } else if (chineseNameFiles.length > 0) {
-      summary.textContent = `文件名不能包含中文，将跳过：${chineseNameFiles[0].name}`;
+      summary.textContent = i18nText(`文件名不能包含中文，将跳过：${chineseNameFiles[0].name}`);
     } else if (hasTooManyFiles) {
-      summary.textContent = `单批最多选择 ${maxFiles} 个文件`;
+      summary.textContent = i18nText(`单批最多选择 ${maxFiles} 个文件`);
     } else if (isOversized) {
-      summary.textContent = `当前选择 ${files.length} 个文件，共 ${formatUploadSize(totalBytes)}，已超过 25MB`;
+      summary.textContent = i18nText(`当前选择 ${files.length} 个文件，共 ${formatUploadSize(totalBytes)}，已超过 500MB`);
     } else {
-      summary.textContent = `已选择 ${files.length} 个文件，共 ${formatUploadSize(totalBytes)}`;
+      summary.textContent = i18nFormat("selected_files", `已选择 ${files.length} 个文件，共 ${formatUploadSize(totalBytes)}`, files.length, formatUploadSize(totalBytes));
     }
   }
 
@@ -987,12 +1399,7 @@ document.querySelectorAll("[data-user-toggle]").forEach((button) => {
           "X-Requested-With": "fetch",
         },
       });
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        throw new Error("接口返回异常，请刷新页面后重试");
-      }
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "切换失败");
+      const data = await readAdminJson(response, "切换失败");
 
       button.classList.toggle("on", data.is_active);
       button.classList.toggle("off", !data.is_active);
@@ -1002,7 +1409,7 @@ document.querySelectorAll("[data-user-toggle]").forEach((button) => {
       if (updatedAt && data.updated_at) updatedAt.textContent = data.updated_at;
       showToast(`账号 ${data.username} 已${data.label}`, "success");
     } catch (error) {
-      showToast(error.message || "切换失败");
+      showRequestError(error, "切换失败");
     } finally {
       button.disabled = false;
     }

@@ -8,6 +8,12 @@
 </section>
 <form class="filters cards-filters" method="get" action="/admin/cards">
   <input class="card-search-filter" name="q" placeholder="搜索卡密" value="{{ filters.q }}" aria-label="搜索卡密">
+  <select name="product_id" aria-label="商品筛选">
+    <option value="">全部商品</option>
+    {% for product in products %}
+    <option value="{{ product.id }}" {% if filters.product_id|string == product.id|string %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+    {% endfor %}
+  </select>
   <select class="status-filter" name="status" aria-label="CDK 状态">
     <option value="">全部状态</option>
     {% for value in ["pending", "sold", "voided", "expired"] %}
@@ -47,6 +53,7 @@
         <col class="cards-seq-col">
         <col class="cards-code-col">
         <col class="cards-file-count-col">
+        <col class="cards-file-count-col">
         <col class="cards-usage-col">
         <col class="cards-expiry-col">
         <col class="cards-status-col">
@@ -61,6 +68,7 @@
           <th><input type="checkbox" data-check-all aria-label="全选本页 CDK"></th>
           <th class="center">序号</th>
           <th>卡密</th>
+          <th>商品</th>
           <th class="center">账号数</th>
           <th class="center">使用次数</th>
           <th class="center time-col">过期时间</th>
@@ -84,6 +92,7 @@
               <button class="copy-button" type="button" data-copy-text="{{ card.code }}" title="复制卡密" aria-label="复制卡密">复制</button>
             </div>
           </td>
+          <td>{{ card.product.name if card.product else "-" }}</td>
           <td class="center">{{ card.file_count }}</td>
           <td class="center"><span class="usage-count"><strong>{{ card.redemption_count }}</strong> / {{ card.max_redemptions }}</span></td>
           <td class="center time-col">{{ card.expires_at|full_dt("永不过期") }}</td>
@@ -97,7 +106,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="{% if current_user.role in ['admin', 'super_admin'] %}12{% else %}11{% endif %}" class="empty">暂无卡密</td></tr>
+        <tr><td colspan="{% if current_user.role in ['admin', 'super_admin'] %}13{% else %}12{% endif %}" class="empty">暂无卡密</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -108,10 +117,11 @@
       <span class="page-summary">共 {{ pagination.total }} 条，第 {{ pagination.page }} / {{ pagination.total_pages }} 页</span>
       <form method="get" action="/admin/cards" class="page-size-form">
         <input type="hidden" name="q" value="{{ filters.q }}">
+        <input type="hidden" name="product_id" value="{{ filters.product_id }}">
         <input type="hidden" name="status" value="{{ filters.status }}">
         <input type="hidden" name="start" value="{{ filters.start }}">
         <input type="hidden" name="end" value="{{ filters.end }}">
-        <select name="page_size" aria-label="每页显示数量" onchange="this.form.submit()">
+        <select name="page_size" aria-label="每页显示数量" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
           {% for size in pagination.page_sizes %}
           <option value="{{ size }}" {% if pagination.page_size == size %}selected{% endif %}>每页 {{ size }}</option>
           {% endfor %}
@@ -119,12 +129,12 @@
       </form>
       <div class="pager-links">
       {% if pagination.has_prev %}
-      <a href="?q={{ filters.q }}&status={{ filters.status }}&start={{ filters.start }}&end={{ filters.end }}&page_size={{ pagination.page_size }}&page={{ pagination.prev_page }}">上一页</a>
+      <a href="?q={{ filters.q }}&product_id={{ filters.product_id }}&status={{ filters.status }}&start={{ filters.start }}&end={{ filters.end }}&page_size={{ pagination.page_size }}&page={{ pagination.prev_page }}">上一页</a>
       {% else %}
       <span>上一页</span>
       {% endif %}
       {% if pagination.has_next %}
-      <a href="?q={{ filters.q }}&status={{ filters.status }}&start={{ filters.start }}&end={{ filters.end }}&page_size={{ pagination.page_size }}&page={{ pagination.next_page }}">下一页</a>
+      <a href="?q={{ filters.q }}&product_id={{ filters.product_id }}&status={{ filters.status }}&start={{ filters.start }}&end={{ filters.end }}&page_size={{ pagination.page_size }}&page={{ pagination.next_page }}">下一页</a>
       {% else %}
       <span>下一页</span>
       {% endif %}
@@ -143,6 +153,14 @@
   <form class="drawer-form" method="post" action="/admin/cards/create">
     <input name="file_count" type="hidden" value="1">
     <div class="one-code-rule"><span>1</span><b>CDK</b><i></i><span>1</span><b>账号</b></div>
+    <div class="field">
+      <label for="cardProduct">所属商品</label>
+      <select id="cardProduct" name="product_id" required>
+        {% for product in products %}
+        <option value="{{ product.id }}" {% if product.status == "listed" %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="field">
       <label for="cardQuantity">生成数量</label>
       <input id="cardQuantity" name="quantity" type="number" min="1" max="200" value="10">
@@ -211,4 +229,40 @@
     <div class="empty">暂无使用记录</div>
   </div>
 </aside>
+<div class="card-create-backdrop" data-card-create-backdrop hidden></div>
+<section
+  class="card-create-modal"
+  data-card-create-modal
+  hidden
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="cardCreateModalTitle"
+  aria-describedby="cardCreateModalSummary"
+>
+  <div class="card-create-modal-header">
+    <div class="card-create-success-mark" aria-hidden="true"><span>✓</span></div>
+    <div class="card-create-heading">
+      <span class="card-create-eyebrow">CDK READY</span>
+      <h2 id="cardCreateModalTitle">生成成功</h2>
+      <p id="cardCreateModalSummary" data-card-create-summary aria-live="polite">已创建 0 个兑换码</p>
+    </div>
+    <button class="card-create-close" type="button" data-card-create-close aria-label="关闭生成结果">
+      <span aria-hidden="true">×</span>
+    </button>
+  </div>
+  <div class="card-create-modal-body">
+    <div class="card-create-list-wrap">
+      <div class="card-create-list-label"><span>本次生成的兑换码</span><span data-card-create-count>0 个</span></div>
+      <div class="card-create-list" data-card-create-list role="list" aria-label="本次生成的兑换码"></div>
+    </div>
+  </div>
+  <div class="card-create-modal-footer">
+    <button class="card-create-copy secondary-action" type="button" data-card-create-copy>
+      <span class="card-create-button-icon copy-icon" aria-hidden="true"></span><span>全部复制</span>
+    </button>
+    <button class="card-create-download primary-action" type="button" data-card-create-download>
+      <span class="card-create-button-icon download-icon" aria-hidden="true">↓</span><span>下载</span>
+    </button>
+  </div>
+</section>
 {% endblock %}

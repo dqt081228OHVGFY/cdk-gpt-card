@@ -30,11 +30,32 @@
         });
       });
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=gpt-card-admin-20260714-6">
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=exception-motion-20260721-1">
     {% block head %}{% endblock %}
   </head>
   <body class="{% block body_class %}{% endblock %}">
-    {% block body %}{% endblock %}
     <div class="route-progress" aria-hidden="true"><span></span></div>
+    <div class="site-notice-backdrop" data-site-notice-backdrop hidden></div>
+    <section
+      class="site-notice"
+      id="siteNotice"
+      data-site-notice
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="siteNoticeTitle"
+      aria-describedby="siteNoticeMessage"
+    >
+      <div class="site-notice-mark" data-site-notice-mark aria-hidden="true"><span>!</span></div>
+      <div class="site-notice-copy">
+        <span class="site-notice-kicker" data-site-notice-kicker>NOTICE</span>
+        <h2 id="siteNoticeTitle" data-site-notice-title>提示</h2>
+        <p id="siteNoticeMessage" data-site-notice-message></p>
+      </div>
+      <button class="site-notice-close" type="button" data-site-notice-close aria-label="关闭提示"><span aria-hidden="true">×</span></button>
+      <button class="site-notice-confirm" type="button" data-site-notice-confirm>知道了</button>
+    </section>
+    <script src="{{ url_for('static', path='i18n.js') }}?v=exception-motion-20260721-1"></script>
+    {% block body %}{% endblock %}
   </body>
 </html>

@@ -3,8 +3,6 @@
 {% block head %}<style>@view-transition { navigation: auto; }</style>{% endblock %}
 {% block body %}
 <main class="portal-shell">
-  <div id="convertToast" class="toast" hidden role="status" aria-live="polite"></div>
-
   <header class="portal-header" data-portal-reveal>
     <a class="portal-brand" href="/" aria-label="GPT发卡网首页">
       <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
@@ -75,7 +73,7 @@
         </fieldset>
 
         <button class="portal-primary" type="submit"><span>开始转换并生成链接</span><b aria-hidden="true">→</b></button>
-        <p class="form-footnote"><span aria-hidden="true">⌁</span> 下载链接保留 10 分钟，过期文件自动清理</p>
+        <p class="form-footnote"><span aria-hidden="true">⌁</span> 转换完成后生成一次性下载链接</p>
       </form>
 
       <section class="delivery-result portal-result" id="convertResult" hidden aria-live="polite">
@@ -86,11 +84,11 @@
           <p id="convertResultMeta">-</p>
         </div>
         <a class="portal-primary compact" id="convertDownloadLink" href="#">下载转换文件 <b aria-hidden="true">↓</b></a>
-        <div class="expiry-line"><span></span><b id="convertExpiry">链接将在 10:00 后失效</b></div>
+        <div class="expiry-line"><span></span><b>一次性链接，下载后立即失效</b></div>
       </section>
     </div>
   </section>
 
 </main>
-<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+<script src="{{ url_for('static', path='app.js') }}?v=exception-motion-20260721-1"></script>
 {% endblock %}

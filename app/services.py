@@ -6,17 +6,40 @@ import secrets
 import shutil
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import case, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from .database import DOWNLOAD_DIR, UPLOAD_DIR
-from .models import ROLE_SUPER_ADMIN, AuditLog, Card, ManagedFile, Redemption, TemporaryDownload, User
+from .database import DOWNLOAD_DIR, UPLOAD_DIR, SessionLocal
+from .health import (
+    HEALTH_ALIVE,
+    HEALTH_CHECKING,
+    HEALTH_DEAD,
+    HEALTH_UNKNOWN,
+    CodexHealthClient,
+    health_candidate_eligible,
+)
+from .models import (
+    PRODUCT_DRAFT,
+    PRODUCT_HIDDEN,
+    PRODUCT_LISTED,
+    ROLE_SUPER_ADMIN,
+    AuditLog,
+    Card,
+    ManagedFile,
+    Product,
+    Redemption,
+    TemporaryDownload,
+    User,
+)
 from .security import generate_card_code
+from .storage_crypto import read_file as read_account_file
+from .storage_crypto import write_file as write_account_file
 
 
 CARD_PATTERN = re.compile(r"^[0-9a-f]{32}$")
@@ -31,10 +54,26 @@ MAX_ARCHIVE_COMPRESSION_RATIO = 200
 MAX_REDEEM_FILES = 100
 MAX_REDEEM_BYTES = 25 * 1024 * 1024
 MAX_REDEMPTION_CANDIDATES = 500
+MAX_HEALTH_CHECK_WORKERS = 4
+# Redemption is serialized at the API boundary, so a small dedicated pool can
+# speed up batch delivery health checks without multiplying server load.
+REDEEM_HEALTH_CHECK_WORKERS = 6
+REDEEM_HEALTH_CHECK_MAX_BATCH = 24
+HEALTH_PRECHECK_CANDIDATE_MULTIPLIER = 4
 FILES_PER_CARD = 1
+DEFAULT_PRODUCT_SKU = "legacy"
 SUB2API_DOWNLOAD_PREFIX = "sub2api"
-DOWNLOAD_TTL = timedelta(hours=24)
+DOWNLOAD_TTL = timedelta(hours=6)
 CONVERT_DOWNLOAD_TTL = timedelta(minutes=10)
+HEALTH_AUDIT_ACTIONS = {
+    "check_file_account_status",
+    "automatic_upload_liveness",
+    "manual_liveness_check",
+    "manual_liveness_sync",
+    "manual_liveness_refresh",
+    "upload_and_check_liveness",
+    "redeem_health_precheck",
+}
 SECURE_RANDOM = secrets.SystemRandom()
 
 
@@ -48,6 +87,19 @@ class ResourceLimitError(ServiceError):
 
 class FileClaimConflict(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class ResolvedTemporaryDownload:
+    file_path: str
+    download_name: str
+    media_type: str
+
+
+@dataclass(frozen=True)
+class HealthCheckOutcome:
+    file_id: int
+    status: str
 
 
 @dataclass
@@ -93,6 +145,45 @@ def now_utc() -> datetime:
     return datetime.utcnow()
 
 
+def default_product_fields() -> dict[str, object]:
+    return {
+        "name": "历史商品",
+        "sku": DEFAULT_PRODUCT_SKU,
+        "description": "用于承接旧库存和旧 CDK 的默认商品",
+        "status": PRODUCT_LISTED,
+        "health_check_enabled": False,
+        "health_timeout_seconds": 15,
+        "health_daily_limit": 0,
+        "low_stock_threshold": 3,
+    }
+
+
+def ensure_legacy_product(db: Session, creator_id: int | None = None) -> Product:
+    product = db.scalar(select(Product).where(Product.sku == DEFAULT_PRODUCT_SKU))
+    if product:
+        return product
+    timestamp = now_utc()
+    product = Product(
+        creator_id=creator_id,
+        created_at=timestamp,
+        updated_at=timestamp,
+        **default_product_fields(),
+    )
+    db.add(product)
+    db.flush()
+    return product
+
+
+def default_product_id(db: Session) -> int:
+    return ensure_legacy_product(db).id
+
+
+def normalize_product_health_enabled(product: Product, item: ManagedFile | None = None) -> bool:
+    if item is not None and item.source_format == "text":
+        return product.health_check_enabled
+    return product.health_check_enabled
+
+
 def add_audit(db: Session, actor_id: int | None, action: str, target_type: str, target_id: int | None = None, detail: str | None = None) -> None:
     db.add(
         AuditLog(
@@ -123,8 +214,7 @@ def validate_json_payload(raw: bytes) -> object:
 
 def load_json_file(path: str | Path) -> object:
     try:
-        with Path(path).open("r", encoding="utf-8-sig") as file:
-            return json.load(file)
+        return json.loads(read_account_file(path).decode("utf-8-sig"))
     except OSError as exc:
         raise ServiceError(f"JSON file cannot be read: {Path(path).name}") from exc
     except json.JSONDecodeError as exc:
@@ -512,12 +602,14 @@ def save_json_file(
     uploader: User,
     filename: str,
     raw: bytes,
+    product: Product | None = None,
     batch_name: str | None = None,
     source_format: str = "cpa",
     account_email: str | None = None,
 ) -> ManagedFile:
     validate_upload_filename(filename)
     validate_json_payload(raw)
+    product = product or ensure_legacy_product(db, uploader.id)
     original_name = display_json_name(filename)
     timestamp = now_utc()
     identity_filters = [ManagedFile.original_name == original_name]
@@ -525,14 +617,15 @@ def save_json_file(
         identity_filters.append(func.lower(ManagedFile.account_email) == account_email.lower())
     existing = db.scalar(
         select(ManagedFile)
-        .where(ManagedFile.uploader_id == uploader.id, or_(*identity_filters))
+        .where(ManagedFile.uploader_id == uploader.id, ManagedFile.product_id == product.id, or_(*identity_filters))
         .order_by(ManagedFile.id.desc())
     )
     if existing:
         target = Path(existing.stored_path)
-        target.write_bytes(raw)
+        write_account_file(target, raw)
         existing.original_name = original_name
         existing.uploaded_at = timestamp
+        existing.product_id = product.id
         existing.batch_name = batch_name
         existing.source_format = source_format
         existing.account_email = account_email
@@ -545,12 +638,13 @@ def save_json_file(
 
     stored_name = f"{uuid.uuid4().hex}_{original_name}"
     target = UPLOAD_DIR / stored_name
-    target.write_bytes(raw)
+    write_account_file(target, raw)
     managed = ManagedFile(
         original_name=original_name,
         stored_path=str(target),
         generated_at=timestamp,
         uploader_id=uploader.id,
+        product_id=product.id,
         batch_name=batch_name,
         source_format=source_format,
         account_email=account_email,
@@ -569,17 +663,24 @@ def import_json_payload_files(
     uploader: User,
     filename: str,
     raw: bytes,
+    product: Product | None = None,
     batch_name: str | None = None,
     budget: ImportBudget | None = None,
     document_precounted: bool = False,
 ) -> list[ManagedFile]:
+    if isinstance(product, str) and batch_name is None:
+        batch_name = product
+        product = None
+    if isinstance(product, ImportBudget) and budget is None:
+        budget = product
+        product = None
     budget = budget or ImportBudget()
     if not document_precounted:
         budget.consume_document(len(raw))
     payload = validate_json_payload(raw)
     accounts, source_format = expand_to_cpa_payloads(payload)
     budget.consume_accounts(len(accounts))
-    return save_prepared_json_payload_files(db, uploader, filename, raw, accounts, source_format, batch_name)
+    return save_prepared_json_payload_files(db, uploader, filename, raw, accounts, source_format, product, batch_name)
 
 
 def save_prepared_json_payload_files(
@@ -589,8 +690,13 @@ def save_prepared_json_payload_files(
     raw: bytes,
     accounts: list[dict],
     source_format: str,
+    product: Product | None = None,
     batch_name: str | None = None,
 ) -> list[ManagedFile]:
+    if isinstance(product, str) and batch_name is None:
+        batch_name = product
+        product = None
+    product = product or ensure_legacy_product(db, uploader.id)
     imported_files: list[ManagedFile] = []
     for index, account in enumerate(accounts, start=1):
         output_name = Path(filename).name if len(accounts) == 1 and source_format == "cpa" else cpa_output_name(account, filename, index)
@@ -604,6 +710,7 @@ def save_prepared_json_payload_files(
             uploader,
             output_name,
             output_raw,
+            product=product,
             batch_name=batch_name,
             source_format=(
                 "sub"
@@ -626,9 +733,10 @@ def import_json_payload(
     uploader: User,
     filename: str,
     raw: bytes,
+    product: Product | None = None,
     batch_name: str | None = None,
 ) -> int:
-    return len(import_json_payload_files(db, uploader, filename, raw, batch_name=batch_name))
+    return len(import_json_payload_files(db, uploader, filename, raw, product=product, batch_name=batch_name))
 
 
 def import_upload(
@@ -636,9 +744,13 @@ def import_upload(
     uploader: User,
     filename: str,
     raw: bytes,
+    product: Product | None = None,
     budget: ImportBudget | None = None,
 ) -> tuple[int, list[str]]:
-    imported_files, errors = import_upload_files(db, uploader, filename, raw, budget)
+    if isinstance(product, ImportBudget) and budget is None:
+        budget = product
+        product = None
+    imported_files, errors = import_upload_files(db, uploader, filename, raw, product, budget)
     return len(imported_files), errors
 
 
@@ -647,16 +759,21 @@ def import_upload_files(
     uploader: User,
     filename: str,
     raw: bytes,
+    product: Product | None = None,
     budget: ImportBudget | None = None,
 ) -> tuple[list[ManagedFile], list[str]]:
+    if isinstance(product, ImportBudget) and budget is None:
+        budget = product
+        product = None
     budget = budget or ImportBudget()
+    product = product or ensure_legacy_product(db, uploader.id)
     validate_upload_filename(filename)
     suffix = Path(filename).suffix.lower()
     errors: list[str] = []
     imported_files: list[ManagedFile] = []
     if suffix in JSON_FILE_SUFFIXES:
         json_name = f"{Path(filename).stem}.json"
-        imported_files.extend(import_json_payload_files(db, uploader, json_name, raw, budget=budget))
+        imported_files.extend(import_json_payload_files(db, uploader, json_name, raw, product=product, budget=budget))
     elif suffix == ".zip":
         batch_name = Path(filename).name
         try:
@@ -702,6 +819,7 @@ def import_upload_files(
                             document_raw,
                             accounts,
                             source_format,
+                            product,
                             batch_name,
                         )
                     )
@@ -832,37 +950,76 @@ def create_temporary_download(
     return token, link
 
 
-def resolve_temporary_download(db: Session, token: str, timestamp: datetime | None = None) -> TemporaryDownload:
+def remove_unreferenced_temporary_file(db: Session, raw_path: str, timestamp: datetime) -> None:
+    try:
+        path = Path(raw_path).resolve()
+    except OSError:
+        return
+    if path.parent != DOWNLOAD_DIR.resolve() or not path.is_file():
+        return
+    active_references = db.scalar(
+        select(func.count()).select_from(TemporaryDownload).where(
+            TemporaryDownload.file_path == str(path),
+            TemporaryDownload.revoked_at.is_(None),
+            TemporaryDownload.expires_at > timestamp,
+        )
+    ) or 0
+    if active_references == 0:
+        path.unlink(missing_ok=True)
+
+
+def resolve_temporary_download(db: Session, token: str, timestamp: datetime | None = None) -> ResolvedTemporaryDownload:
     timestamp = timestamp or now_utc()
     if len(token) < 32 or len(token) > 128:
         raise ServiceError("下载链接已失效，请重新生成")
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     link = db.scalar(select(TemporaryDownload).where(TemporaryDownload.token_hash == token_hash))
     if not link or link.revoked_at or link.expires_at <= timestamp:
+        if link:
+            stale_path = link.file_path
+            db.delete(link)
+            db.commit()
+            remove_unreferenced_temporary_file(db, stale_path, timestamp)
         raise ServiceError("下载链接已失效，请重新生成")
     resolved_path = Path(link.file_path).resolve()
     if resolved_path.parent != DOWNLOAD_DIR.resolve() or not resolved_path.is_file():
+        db.delete(link)
+        db.commit()
         raise ServiceError("临时文件已清理，请重新生成下载链接")
-    link.download_count += 1
-    link.last_download_at = timestamp
-    link.revoked_at = timestamp
+    resolved = ResolvedTemporaryDownload(
+        file_path=str(resolved_path),
+        download_name=link.download_name,
+        media_type=link.media_type,
+    )
+    consumed = db.execute(
+        delete(TemporaryDownload).where(
+            TemporaryDownload.id == link.id,
+            TemporaryDownload.revoked_at.is_(None),
+            TemporaryDownload.expires_at > timestamp,
+        )
+    )
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise ServiceError("下载链接已失效，请重新生成")
     db.commit()
-    return link
+    return resolved
 
 
 def cleanup_temporary_downloads(db: Session, timestamp: datetime | None = None) -> int:
     timestamp = timestamp or now_utc()
-    expired = list(
+    stale = list(
         db.scalars(
             select(TemporaryDownload).where(
-                TemporaryDownload.revoked_at.is_(None),
-                TemporaryDownload.expires_at <= timestamp,
+                or_(
+                    TemporaryDownload.revoked_at.is_not(None),
+                    TemporaryDownload.expires_at <= timestamp,
+                )
             )
         )
     )
-    expired_paths = {item.file_path for item in expired}
-    for item in expired:
-        item.revoked_at = timestamp
+    stale_paths = {item.file_path for item in stale}
+    for item in stale:
+        db.delete(item)
 
     active_paths = set(
         db.scalars(
@@ -873,7 +1030,7 @@ def cleanup_temporary_downloads(db: Session, timestamp: datetime | None = None) 
         )
     )
     removed = 0
-    for raw_path in expired_paths:
+    for raw_path in stale_paths:
         if raw_path in active_paths:
             continue
         path = Path(raw_path)
@@ -881,7 +1038,6 @@ def cleanup_temporary_downloads(db: Session, timestamp: datetime | None = None) 
             path.unlink(missing_ok=True)
             removed += 1
 
-    cutoff = timestamp - DOWNLOAD_TTL
     for path in DOWNLOAD_DIR.iterdir():
         if not path.is_file() or str(path) in active_paths:
             continue
@@ -889,29 +1045,45 @@ def cleanup_temporary_downloads(db: Session, timestamp: datetime | None = None) 
             modified = datetime.fromtimestamp(path.stat().st_mtime)
         except OSError:
             continue
-        if modified <= cutoff:
+        ttl = CONVERT_DOWNLOAD_TTL if path.name.startswith("conversion-") else DOWNLOAD_TTL
+        if modified <= timestamp - ttl:
             path.unlink(missing_ok=True)
             removed += 1
     db.commit()
     return removed
 
 
-def create_cards(db: Session, creator: User, file_count: int, quantity: int = 1) -> list[Card]:
+def create_cards(
+    db: Session,
+    creator: User,
+    file_count: int,
+    quantity: int = 1,
+    product: Product | None = None,
+) -> list[Card]:
     if file_count != FILES_PER_CARD:
         raise ServiceError("一户一码固定绑定 1 个 JSON 文件")
     if quantity < 1 or quantity > 200:
         raise ServiceError("单次生成数量必须在 1 到 200 之间")
+    product = product or ensure_legacy_product(db, creator.id)
     cards = []
     for _ in range(quantity):
-        card = Card(code=generate_card_code(db), creator_id=creator.id, file_count=file_count, status="pending")
+        card = Card(
+            code=generate_card_code(db),
+            creator_id=creator.id,
+            product_id=product.id,
+            file_count=file_count,
+            status="pending",
+        )
         db.add(card)
         db.flush()
-        add_audit(db, creator.id, "create_card", "card", card.id, f"{card.code}:{file_count}")
+        add_audit(db, creator.id, "create_card", "card", card.id, f"{card.code}:{file_count}:product={product.id}")
         cards.append(card)
     return cards
 
 
-def normal_inventory_filter():
+def normal_inventory_filter(product: Product | None = None):
+    if product is not None and not product.health_check_enabled:
+        return (ManagedFile.status == "available",)
     return (
         ManagedFile.status == "available",
         ManagedFile.account_status == "available",
@@ -919,22 +1091,55 @@ def normal_inventory_filter():
     )
 
 
-def inventory_breakdown(db: Session, uploader_id: int | None = None) -> dict[str, int]:
-    owner_filter = (ManagedFile.uploader_id == uploader_id,) if uploader_id is not None else ()
-    normal = db.scalar(select(func.count()).select_from(ManagedFile).where(*normal_inventory_filter(), *owner_filter)) or 0
+def product_file_filter(product: Product):
+    if product.sku == DEFAULT_PRODUCT_SKU:
+        return or_(ManagedFile.product_id == product.id, ManagedFile.product_id.is_(None))
+    return ManagedFile.product_id == product.id
+
+
+def inventory_breakdown(db: Session, product_id: int | None = None) -> dict[str, int]:
+    product = db.get(Product, product_id) if product_id is not None else None
+    product_filter = (product_file_filter(product),) if product is not None else ()
+    if product is None:
+        normal = db.scalar(
+            select(func.count())
+            .select_from(ManagedFile)
+            .outerjoin(Product, ManagedFile.product_id == Product.id)
+            .where(
+                ManagedFile.status == "available",
+                or_(
+                    ManagedFile.product_id.is_(None),
+                    Product.health_check_enabled.is_(False),
+                    (
+                        Product.health_check_enabled.is_(True)
+                        & (ManagedFile.account_status == HEALTH_ALIVE)
+                        & ManagedFile.account_checked_at.is_not(None)
+                    ),
+                ),
+            )
+        ) or 0
+    else:
+        normal = db.scalar(select(func.count()).select_from(ManagedFile).where(*normal_inventory_filter(product), *product_filter)) or 0
     healthy = db.scalar(
         select(func.count()).select_from(ManagedFile).where(
             ManagedFile.status == "available",
             ManagedFile.account_status == "available",
             ManagedFile.account_checked_at.is_not(None),
-            *owner_filter,
+            *product_filter,
         )
     ) or 0
     problem = db.scalar(
         select(func.count()).select_from(ManagedFile).where(
             ManagedFile.status == "available",
             ManagedFile.account_status == "unavailable",
-            *owner_filter,
+            *product_filter,
+        )
+    ) or 0
+    unknown = db.scalar(
+        select(func.count()).select_from(ManagedFile).where(
+            ManagedFile.status == "available",
+            ManagedFile.account_status == "unknown",
+            *product_filter,
         )
     ) or 0
     unchecked = db.scalar(
@@ -943,16 +1148,93 @@ def inventory_breakdown(db: Session, uploader_id: int | None = None) -> dict[str
             or_(
                 ManagedFile.account_status.is_(None),
                 ManagedFile.account_status == "",
+                ManagedFile.account_status == HEALTH_CHECKING,
                 (ManagedFile.account_status == "available") & ManagedFile.account_checked_at.is_(None),
             ),
-            *owner_filter,
+            *product_filter,
         )
     ) or 0
-    return {"normal": normal, "healthy": healthy, "problem": problem, "unchecked": unchecked, "total": normal + problem}
+    return {
+        "normal": normal,
+        "healthy": healthy,
+        "problem": problem,
+        "unknown": unknown,
+        "unchecked": unchecked,
+        "total": normal + problem + unknown,
+    }
 
 
 def inventory_count(db: Session) -> int:
     return inventory_breakdown(db)["normal"]
+
+
+def public_delivery_products(db: Session) -> list[dict[str, int | str]]:
+    """Return the small, public-safe inventory summary for listed products.
+
+    This intentionally exposes only product metadata and aggregated counts.  It
+    uses two grouped queries, so the public inventory refresh remains constant
+    cost even when the catalogue grows.
+    """
+    file_belongs_to_product = or_(
+        ManagedFile.product_id == Product.id,
+        and_(Product.sku == DEFAULT_PRODUCT_SKU, ManagedFile.product_id.is_(None)),
+    )
+    deliverable_file = and_(
+        ManagedFile.status == "available",
+        or_(
+            Product.health_check_enabled.is_(False),
+            and_(
+                ManagedFile.account_status == HEALTH_ALIVE,
+                ManagedFile.account_checked_at.is_not(None),
+            ),
+        ),
+    )
+    available_count = func.coalesce(func.sum(case((deliverable_file, 1), else_=0)), 0).label("available")
+    rows = db.execute(
+        select(
+            Product.id,
+            Product.name,
+            Product.sku,
+            Product.description,
+            Product.low_stock_threshold,
+            available_count,
+        )
+        .select_from(Product)
+        .outerjoin(ManagedFile, file_belongs_to_product)
+        .where(Product.status == PRODUCT_LISTED)
+        .group_by(
+            Product.id,
+            Product.name,
+            Product.sku,
+            Product.description,
+            Product.low_stock_threshold,
+            Product.created_at,
+        )
+        .order_by(Product.created_at.asc(), Product.id.asc())
+    ).all()
+    if not rows:
+        return []
+
+    product_ids = [row.id for row in rows]
+    pending_cards = dict(
+        db.execute(
+            select(Card.product_id, func.count())
+            .where(Card.status == "pending", Card.product_id.in_(product_ids))
+            .group_by(Card.product_id)
+        ).all()
+    )
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "sku": row.sku,
+            "description": row.description or "",
+            "available": int(row.available or 0),
+            "low_stock_threshold": row.low_stock_threshold,
+            "pending_cards": int(pending_cards.get(row.id, 0)),
+        }
+        for row in rows
+    ]
 
 
 def weighted_pick(files: list[ManagedFile], count: int) -> list[ManagedFile]:
@@ -998,15 +1280,13 @@ def assert_card_can_redeem(card: Card | None, code: str, timestamp: datetime) ->
     return card
 
 
-def claim_available_files(db: Session, file_ids: list[int]) -> None:
+def claim_available_files(db: Session, file_ids: list[int], product: Product | None = None) -> None:
     if not file_ids:
         return
-    result = db.execute(
-        update(ManagedFile)
-        .where(ManagedFile.id.in_(file_ids), ManagedFile.status == "available")
-        .where(ManagedFile.account_status == "available", ManagedFile.account_checked_at.is_not(None))
-        .values(status="locked")
-    )
+    statement = update(ManagedFile).where(ManagedFile.id.in_(file_ids), ManagedFile.status == "available")
+    if product is None or product.health_check_enabled:
+        statement = statement.where(ManagedFile.account_status == "available", ManagedFile.account_checked_at.is_not(None))
+    result = db.execute(statement.values(status="locked"))
     if result.rowcount != len(file_ids):
         raise FileClaimConflict
 
@@ -1017,6 +1297,260 @@ def pick_files_for_cards(db: Session, cards: list[Card]) -> dict[int, list[Manag
     except FileClaimConflict as exc:
         db.rollback()
         raise ServiceError("库存状态变化，请重试") from exc
+
+
+def card_product(db: Session, card: Card) -> Product:
+    if card.product_id is None:
+        product = ensure_legacy_product(db, card.creator_id)
+        card.product_id = product.id
+        return product
+    product = db.get(Product, card.product_id)
+    if not product:
+        raise ServiceError(f"卡密所属商品不存在：{card.code}")
+    return product
+
+
+def assert_product_can_redeem(product: Product, card: Card) -> None:
+    if product.status != PRODUCT_LISTED:
+        raise ServiceError(f"商品未上架，无法兑换：{card.code}")
+
+
+def product_health_used_last_24h(db: Session, product_id: int, timestamp: datetime | None = None) -> int:
+    timestamp = timestamp or now_utc()
+    cutoff = timestamp - timedelta(hours=24)
+    product = db.get(Product, product_id)
+    file_filter = product_file_filter(product) if product else ManagedFile.product_id == product_id
+    file_ids = select(ManagedFile.id).where(file_filter)
+    return db.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(
+            AuditLog.target_type == "file",
+            AuditLog.action.in_(HEALTH_AUDIT_ACTIONS),
+            AuditLog.created_at >= cutoff,
+            AuditLog.target_id.in_(file_ids),
+        )
+    ) or 0
+
+
+def assert_product_health_allowed(db: Session, product: Product, timestamp: datetime | None = None) -> None:
+    if product.health_daily_limit <= 0:
+        return
+    used = product_health_used_last_24h(db, product.id, timestamp)
+    if used >= product.health_daily_limit:
+        raise ServiceError(f"商品 {product.name} 24 小时测活次数已达上限")
+
+
+def apply_health_result(item: ManagedFile, status: str, error: str, timestamp: datetime) -> None:
+    item.account_status = status
+    item.account_checked_at = timestamp
+    if status == HEALTH_ALIVE:
+        item.account_error = ""
+        item.account_error_label = ""
+    else:
+        label = (error or "测活未通过")[:255]
+        item.account_error = label
+        item.account_error_label = label
+
+
+def check_file_account_health(
+    db: Session,
+    item: ManagedFile,
+    actor_id: int | None,
+    audit_action: str = "check_file_account_status",
+    timestamp: datetime | None = None,
+) -> str:
+    timestamp = timestamp or now_utc()
+    product = item.product or (db.get(Product, item.product_id) if item.product_id else None)
+    if product:
+        assert_product_health_allowed(db, product, timestamp)
+    timeout_seconds = product.health_timeout_seconds if product else 15
+    try:
+        raw = read_account_file(item.stored_path)
+        result = CodexHealthClient(timeout_seconds=timeout_seconds).check(
+            raw,
+            persist=lambda updated: write_account_file(item.stored_path, updated),
+        )
+    except Exception as exc:
+        result_status = HEALTH_UNKNOWN
+        result_error = str(exc) or "测活失败"
+    else:
+        result_status = result.status
+        result_error = result.error
+    if result_status not in {HEALTH_ALIVE, HEALTH_DEAD, HEALTH_UNKNOWN}:
+        result_status = HEALTH_UNKNOWN
+        result_error = result_error or "测活返回未知状态"
+    apply_health_result(item, result_status, result_error, timestamp)
+    add_audit(
+        db,
+        actor_id,
+        audit_action,
+        "file",
+        item.id,
+        f"{item.original_name}:{item.account_status}:{item.account_error_label or ''}",
+    )
+    return result_status
+
+
+def check_file_account_health_by_id(
+    file_id: int,
+    actor_id: int | None,
+    audit_action: str,
+    timestamp: datetime,
+    revive_voided: bool = False,
+) -> HealthCheckOutcome:
+    with SessionLocal() as worker_db:
+        item = worker_db.get(ManagedFile, file_id)
+        if not item:
+            return HealthCheckOutcome(file_id=file_id, status="missing")
+        product = item.product or (worker_db.get(Product, item.product_id) if item.product_id else None)
+        if product and not product.health_check_enabled:
+            return HealthCheckOutcome(file_id=file_id, status="skipped")
+        status = check_file_account_health(worker_db, item, actor_id, audit_action, timestamp)
+        if revive_voided and status == HEALTH_ALIVE and item.status == "voided" and item.sold_card_id is None:
+            item.status = "available"
+            item.voided_at = None
+        worker_db.commit()
+        return HealthCheckOutcome(file_id=file_id, status=status)
+
+
+def run_file_health_checks_parallel(
+    file_ids: list[int],
+    actor_id: int | None,
+    audit_action: str,
+    timestamp: datetime,
+    max_workers: int = MAX_HEALTH_CHECK_WORKERS,
+    revive_voided: bool = False,
+) -> list[HealthCheckOutcome]:
+    ordered_ids = list(dict.fromkeys(int(file_id) for file_id in file_ids if file_id))
+    if not ordered_ids:
+        return []
+    worker_count = max(1, min(max_workers, len(ordered_ids)))
+    outcomes: list[HealthCheckOutcome] = []
+    errors: list[Exception] = []
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(check_file_account_health_by_id, file_id, actor_id, audit_action, timestamp, revive_voided)
+            for file_id in ordered_ids
+        ]
+        for future in as_completed(futures):
+            try:
+                outcomes.append(future.result())
+            except Exception as exc:
+                errors.append(exc)
+    if errors:
+        first = errors[0]
+        if isinstance(first, ServiceError):
+            raise first
+        raise ServiceError(str(first) or "测活失败") from first
+    return outcomes
+
+
+def cards_needing_first_inventory(db: Session, cards: list[Card]) -> list[Card]:
+    card_ids = [card.id for card in cards]
+    if not card_ids:
+        return []
+    existing_card_ids = set(
+        db.scalars(
+            select(Redemption.card_id).where(Redemption.card_id.in_(card_ids), Redemption.status == "completed")
+        )
+    )
+    first_cards: list[Card] = []
+    for card in cards:
+        if card.id not in existing_card_ids:
+            if card.redemption_count > 0:
+                raise ServiceError(f"卡密首次兑换记录不存在，禁止重新绑定账号文件：{card.code}")
+            first_cards.append(card)
+    return first_cards
+
+
+def prepare_cards_for_redemption(db: Session, cards: list[Card]) -> None:
+    first_cards = cards_needing_first_inventory(db, cards)
+    products_by_id: dict[int, Product] = {}
+    required_by_product: dict[int, int] = {}
+    for card in cards:
+        product = card_product(db, card)
+        assert_product_can_redeem(product, card)
+        products_by_id[product.id] = product
+    for card in first_cards:
+        product_id = card_product(db, card).id
+        required_by_product[product_id] = required_by_product.get(product_id, 0) + card.file_count
+
+    timestamp = now_utc()
+    checked_any = False
+    for product_id, required in required_by_product.items():
+        product = products_by_id[product_id]
+        if not product.health_check_enabled:
+            continue
+        healthy = db.scalar(
+            select(func.count()).select_from(ManagedFile).where(
+                product_file_filter(product),
+                ManagedFile.status == "available",
+                ManagedFile.account_status == HEALTH_ALIVE,
+                ManagedFile.account_checked_at.is_not(None),
+            )
+        ) or 0
+        if healthy >= required:
+            continue
+        candidates = list(
+            db.scalars(
+                select(ManagedFile)
+                .where(product_file_filter(product), ManagedFile.status == "available")
+                .order_by(ManagedFile.uploaded_at.asc(), ManagedFile.id.asc())
+                .limit(MAX_REDEMPTION_CANDIDATES)
+            )
+        )
+        eligible_ids: list[int] = []
+        for item in candidates:
+            if item.account_status == HEALTH_ALIVE and item.account_checked_at is not None:
+                continue
+            if not health_candidate_eligible(item.account_status, item.account_checked_at, timestamp):
+                continue
+            eligible_ids.append(item.id)
+        cursor = 0
+        while healthy < required and cursor < len(eligible_ids):
+            # Probe only a small adaptive batch at a time.  This avoids the
+            # old eager 50-account sweep when a few live accounts are enough,
+            # while six I/O workers keep genuine batch redemptions responsive.
+            remaining_required = max(required - healthy, 1)
+            chunk_size = min(
+                REDEEM_HEALTH_CHECK_MAX_BATCH,
+                max(REDEEM_HEALTH_CHECK_WORKERS, remaining_required * 2),
+            )
+            if product.health_daily_limit > 0:
+                remaining = product.health_daily_limit - product_health_used_last_24h(db, product_id, timestamp)
+                if remaining <= 0:
+                    break
+                current_chunk_size = min(chunk_size, remaining)
+            else:
+                current_chunk_size = chunk_size
+            chunk = eligible_ids[cursor : cursor + current_chunk_size]
+            cursor += current_chunk_size
+            if not chunk:
+                break
+            db.commit()
+            run_file_health_checks_parallel(
+                chunk,
+                None,
+                "redeem_health_precheck",
+                timestamp,
+                max_workers=REDEEM_HEALTH_CHECK_WORKERS,
+            )
+            checked_any = True
+            db.expire_all()
+            healthy = db.scalar(
+                select(func.count()).select_from(ManagedFile).where(
+                    product_file_filter(product),
+                    ManagedFile.status == "available",
+                    ManagedFile.account_status == HEALTH_ALIVE,
+                    ManagedFile.account_checked_at.is_not(None),
+                )
+            ) or 0
+        if healthy < required:
+            db.commit()
+            raise ServiceError("可用库存测活未通过，请稍后重试")
+    if checked_any:
+        db.commit()
 
 
 def files_for_card_redemption(db: Session, cards: list[Card]) -> tuple[dict[int, list[ManagedFile]], set[int]]:
@@ -1091,30 +1625,38 @@ def reserve_cards_for_redemption(db: Session, cards: list[Card], timestamp: date
 
 
 def pick_and_claim_files_for_cards(db: Session, cards: list[Card]) -> dict[int, list[ManagedFile]]:
-    required_by_creator: dict[int, int] = {}
+    required_by_product: dict[int, int] = {}
+    products_by_id: dict[int, Product] = {}
     for card in cards:
-        required_by_creator[card.creator_id] = required_by_creator.get(card.creator_id, 0) + card.file_count
-    available_by_creator: dict[int, list[ManagedFile]] = {}
+        product = card_product(db, card)
+        assert_product_can_redeem(product, card)
+        products_by_id[product.id] = product
+        required_by_product[product.id] = required_by_product.get(product.id, 0) + card.file_count
+    available_by_product: dict[int, list[ManagedFile]] = {}
     picks_by_card: dict[int, list[ManagedFile]] = {}
     for card in cards:
-        if card.creator_id not in available_by_creator:
-            required = required_by_creator[card.creator_id]
+        product = card_product(db, card)
+        if product.id not in available_by_product:
+            required = required_by_product[product.id]
             candidate_limit = min(MAX_REDEMPTION_CANDIDATES, max(required, required * 4))
-            available_by_creator[card.creator_id] = list(
+            available_by_product[product.id] = list(
                 db.scalars(
                     select(ManagedFile)
-                    .where(ManagedFile.uploader_id == card.creator_id, *normal_inventory_filter())
+                    .where(product_file_filter(product), *normal_inventory_filter(product))
                     .order_by(ManagedFile.uploaded_at.asc(), ManagedFile.id.asc())
                     .limit(candidate_limit)
                 )
             )
-        pool = available_by_creator[card.creator_id]
+            for item in available_by_product[product.id]:
+                if item.product_id is None:
+                    item.product_id = product.id
+        pool = available_by_product[product.id]
         if len(pool) < card.file_count:
             raise ServiceError(f"库存不足，无法兑换：{card.code}")
         picked = weighted_pick(pool, card.file_count)
-        claim_available_files(db, [item.id for item in picked])
+        claim_available_files(db, [item.id for item in picked], product)
         picked_ids = {item.id for item in picked}
-        available_by_creator[card.creator_id] = [item for item in pool if item.id not in picked_ids]
+        available_by_product[product.id] = [item for item in pool if item.id not in picked_ids]
         picks_by_card[card.id] = picked
     return picks_by_card
 
@@ -1131,14 +1673,14 @@ def write_files_zip(output_path: Path, files: list[ManagedFile]) -> None:
             if name in used_names:
                 name = f"{item.id}-{name}"
             used_names.add(name)
-            archive.write(item.stored_path, arcname=name)
+            archive.writestr(name, read_account_file(item.stored_path))
 
 
 def assert_delivery_size(files: list[ManagedFile]) -> None:
     total_bytes = 0
     for item in files:
         try:
-            file_size = Path(item.stored_path).stat().st_size
+            file_size = len(read_account_file(item.stored_path))
         except OSError as exc:
             raise ServiceError(f"账号文件无法读取：{item.original_name}") from exc
         if file_size > MAX_JSON_DOCUMENT_BYTES:
@@ -1159,6 +1701,7 @@ def redeem_cards(db: Session, raw_codes: str) -> Path:
     total_count = sum(card.file_count for card in cards)
     if total_count > MAX_REDEEM_FILES:
         raise ResourceLimitError(f"单次最多支持打包 {MAX_REDEEM_FILES} 个文件")
+    prepare_cards_for_redemption(db, cards)
 
     output_path: Path | None = None
     try:
@@ -1178,7 +1721,7 @@ def redeem_cards(db: Session, raw_codes: str) -> Path:
         suffix = "json" if is_single_json else "zip"
         output_path = DOWNLOAD_DIR / f"{output_stem}_{timestamp.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex}.{suffix}"
         if is_single_json:
-            shutil.copyfile(picked_files[0].stored_path, output_path)
+            output_path.write_bytes(read_account_file(picked_files[0].stored_path))
         else:
             write_files_zip(
                 output_path,
@@ -1195,6 +1738,7 @@ def redeem_cards(db: Session, raw_codes: str) -> Path:
                     item.sold_card_id = card.id
             redemption = Redemption(
                 card_id=card.id,
+                product_id=card.product_id,
                 redeemed_at=timestamp,
                 output_format="cpa",
                 download_path=str(output_path),
@@ -1232,6 +1776,7 @@ def redeem_cards_as_sub2api(db: Session, raw_codes: str) -> tuple[Path, str]:
     total_count = sum(card.file_count for card in cards)
     if total_count > MAX_REDEEM_FILES:
         raise ResourceLimitError(f"单次最多支持打包 {MAX_REDEEM_FILES} 个文件")
+    prepare_cards_for_redemption(db, cards)
 
     output_path: Path | None = None
     try:
@@ -1275,6 +1820,7 @@ def redeem_cards_as_sub2api(db: Session, raw_codes: str) -> tuple[Path, str]:
                     item.sold_card_id = card.id
             redemption = Redemption(
                 card_id=card.id,
+                product_id=card.product_id,
                 redeemed_at=timestamp,
                 output_format="sub",
                 download_path=str(output_path),
@@ -1313,7 +1859,7 @@ def rebuild_redemption_download(db: Session, redemption: Redemption) -> tuple[Pa
         media_type = "application/json"
     elif len(files) == 1:
         output_path = DOWNLOAD_DIR / f"redemption-{redemption.id}-cpa-{unique}.json"
-        shutil.copyfile(files[0].stored_path, output_path)
+        output_path.write_bytes(read_account_file(files[0].stored_path))
         download_name = json_download_name(files[0].original_name)
         media_type = "application/json"
     else:
@@ -1362,8 +1908,6 @@ def void_files(db: Session, actor: User, ids: list[int]) -> int:
     if not ids:
         return 0
     query = select(ManagedFile).where(ManagedFile.id.in_(ids), ManagedFile.status.in_(["available", "locked"]))
-    if actor.role != ROLE_SUPER_ADMIN:
-        query = query.where(ManagedFile.uploader_id == actor.id)
     files = list(db.scalars(query))
     timestamp = now_utc()
     for item in files:
@@ -1377,8 +1921,6 @@ def void_cards(db: Session, actor: User, ids: list[int]) -> int:
     if not ids:
         return 0
     query = select(Card).where(Card.id.in_(ids), Card.status == "pending")
-    if actor.role != ROLE_SUPER_ADMIN:
-        query = query.where(Card.creator_id == actor.id)
     cards = list(db.scalars(query))
     timestamp = now_utc()
     for card in cards:

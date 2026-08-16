@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body_class %}admin-surface{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='admin-theme.css') }}?v=white-control-20260714-9">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='admin-theme.css') }}?v=admin-motion-20260722-1">{% endblock %}
 {% block body %}
 <main class="admin-shell">
   <aside class="admin-sidebar">
@@ -13,11 +13,12 @@
       {% if current_user.role == "super_admin" %}
       <a class="nav-link {% if request.url.path == '/admin/users' %}active{% endif %}" href="/admin/users"><span>02</span>管理员管理</a>
       {% endif %}
-      <a class="nav-link {% if request.url.path == '/admin/cards' %}active{% endif %}" href="/admin/cards"><span>03</span>CDK 管理</a>
-      <a class="nav-link {% if request.url.path == '/admin/files' %}active{% endif %}" href="/admin/files"><span>04</span>账号文件</a>
-      <a class="nav-link {% if request.url.path == '/admin/liveness' %}active{% endif %}" href="/admin/liveness"><span>05</span>cdk站点测活</a>
-      <a class="nav-link {% if request.url.path == '/admin/uploads' %}active{% endif %}" href="/admin/uploads"><span>06</span>批量导入</a>
-      <a class="nav-link {% if request.url.path == '/admin/profile' %}active{% endif %}" href="/admin/profile"><span>07</span>账户设置</a>
+      <a class="nav-link {% if request.url.path == '/admin/products' %}active{% endif %}" href="/admin/products"><span>03</span>商品管理</a>
+      <a class="nav-link {% if request.url.path == '/admin/cards' %}active{% endif %}" href="/admin/cards"><span>04</span>CDK 管理</a>
+      <a class="nav-link {% if request.url.path == '/admin/files' %}active{% endif %}" href="/admin/files"><span>05</span>账号文件</a>
+      <a class="nav-link {% if request.url.path == '/admin/liveness' %}active{% endif %}" href="/admin/liveness"><span>06</span>独立测活</a>
+      <a class="nav-link {% if request.url.path == '/admin/uploads' %}active{% endif %}" href="/admin/uploads"><span>07</span>批量导入</a>
+      <a class="nav-link {% if request.url.path == '/admin/profile' %}active{% endif %}" href="/admin/profile"><span>08</span>账户设置</a>
     </nav>
   </aside>
   <section class="admin-main">
@@ -31,22 +32,24 @@
       </div>
     </header>
     <div class="admin-content-frame">
-      {% if message %}<div class="notice success page-flash" data-toast-type="success">{{ message }}</div>{% endif %}
-      {% if error %}<div class="notice error page-flash" data-toast-type="error">{{ error }}</div>{% endif %}
+      {% if message %}<div class="site-flash" data-site-flash data-message-type="success" hidden>{{ message }}</div>{% endif %}
+      {% if error %}<div class="site-flash" data-site-flash data-message-type="error" hidden>{{ error }}</div>{% endif %}
       {% block admin_content %}{% endblock %}
     </div>
   </section>
-  <div id="adminToast" class="toast" hidden role="status" aria-live="polite"></div>
   <div class="confirm-backdrop" data-confirm-backdrop hidden></div>
   <div class="confirm-dialog" data-confirm-dialog hidden role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
     <button type="button" class="confirm-close" data-confirm-close aria-label="关闭"></button>
-    <h2 id="confirmTitle">确认操作</h2>
-    <p data-confirm-message></p>
+    <span class="confirm-kicker">ACTION CHECK</span>
+    <h2 id="confirmTitle" data-confirm-title>确认操作</h2>
+    <div class="confirm-message-box">
+      <p data-confirm-message></p>
+    </div>
     <div class="confirm-actions">
-      <button type="button" class="secondary-action slim" data-confirm-yes>标记</button>
-      <button type="button" class="ghost-action slim" data-confirm-no>仅下载</button>
+      <button type="button" class="danger-action slim" data-confirm-yes>确认</button>
+      <button type="button" class="ghost-action slim" data-confirm-no>取消</button>
     </div>
   </div>
 </main>
-<script src="{{ url_for('static', path='admin.js') }}?v=white-control-20260714-9"></script>
+<script src="{{ url_for('static', path='admin.js') }}?v=admin-motion-20260722-1"></script>
 {% endblock %}

@@ -448,8 +448,9 @@ body.admin-surface.is-route-loading .admin-main {
   grid-template-columns: minmax(240px, 1fr) 130px 140px 140px 108px 96px;
 }
 
-.admin-surface .files-filters {
-  grid-template-columns: minmax(220px, 1fr) minmax(190px, 0.75fr) 140px 150px 108px 96px;
+.admin-surface .files-filters,
+.admin-surface .cards-filters {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .admin-surface .filters,
@@ -470,6 +471,13 @@ body.admin-surface.is-route-loading .admin-main {
   border-color: #d7dad4;
   background: #f8f9f6;
   box-shadow: none;
+}
+
+.admin-surface select,
+.admin-surface select option {
+  min-height: 40px;
+  color: #27272a;
+  background: #ffffff;
 }
 
 .admin-surface input::placeholder,
@@ -493,8 +501,14 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .system-select-option {
+  min-height: 38px;
+  padding: 10px 12px;
   color: #3f3f46;
   background: #ffffff;
+}
+
+.admin-surface .system-select-option:first-child {
+  margin-top: 4px;
 }
 
 .admin-surface .system-select-option:hover,
@@ -1323,6 +1337,421 @@ body.admin-surface.is-api-loading .route-progress span {
   50% { transform: scale(0.72); opacity: 0.6; }
 }
 
+/* Batch CDK result: a focused, celebratory checkpoint after a successful create. */
+.admin-surface .card-create-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(24, 24, 27, 0.4);
+  backdrop-filter: blur(4px) saturate(0.86);
+  opacity: 0;
+  transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.admin-surface .card-create-backdrop.open {
+  opacity: 1;
+}
+
+.admin-surface .card-create-modal {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 81;
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8ddd4;
+  border-radius: 16px;
+  color: #18181b;
+  background: #ffffff;
+  box-shadow: 0 34px 110px rgba(24, 24, 27, 0.25), 0 5px 20px rgba(24, 24, 27, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, calc(-50% + 22px)) scale(0.95) rotateX(3deg);
+  transform-origin: 50% 80%;
+  transition: opacity 300ms cubic-bezier(0.22, 1, 0.36, 1), transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.admin-surface .card-create-modal.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1) rotateX(0deg);
+}
+
+.admin-surface .card-create-modal-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 16px;
+  padding: 26px 28px 24px;
+  border-bottom: 1px solid #e4e7e1;
+}
+
+.admin-surface .card-create-success-mark {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #16805b;
+  background: #dcf9e8;
+  box-shadow: inset 0 0 0 1px rgba(31, 173, 111, 0.16);
+  animation: card-create-mark-pop 620ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+.admin-surface .card-create-success-mark::before,
+.admin-surface .card-create-success-mark::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 1px solid rgba(31, 173, 111, 0.22);
+  border-radius: inherit;
+  opacity: 0;
+  animation: card-create-mark-ring 900ms ease-out 220ms both;
+}
+
+.admin-surface .card-create-success-mark::after {
+  inset: -14px;
+  border-color: rgba(31, 173, 111, 0.12);
+  animation-delay: 320ms;
+}
+
+.admin-surface .card-create-success-mark span {
+  font-size: 25px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.admin-surface .card-create-heading {
+  min-width: 0;
+}
+
+.admin-surface .card-create-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #16805b;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.admin-surface .card-create-heading h2 {
+  margin: 0;
+  color: #18181b;
+  font-size: 23px;
+  line-height: 1.15;
+}
+
+.admin-surface .card-create-heading p {
+  margin: 5px 0 0;
+  color: #71717a;
+  font-size: 14px;
+}
+
+.admin-surface .card-create-close {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #8b929d;
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.admin-surface .card-create-close span {
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 0.8;
+}
+
+.admin-surface .card-create-close:hover {
+  color: #18181b;
+  border-color: #d7dcd4;
+  background: #f2f4ef;
+  transform: rotate(4deg);
+}
+
+.admin-surface .card-create-close:focus-visible,
+.admin-surface .card-create-copy:focus-visible,
+.admin-surface .card-create-download:focus-visible,
+.admin-surface .card-create-item-copy:focus-visible {
+  outline: 3px solid rgba(24, 24, 27, 0.15);
+  outline-offset: 2px;
+}
+
+.admin-surface .card-create-modal-body {
+  min-height: 0;
+  padding: 24px 28px 26px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd2c7 transparent;
+}
+
+.admin-surface .card-create-list-wrap {
+  border: 1px solid #dfe4dc;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fafbf9;
+}
+
+.admin-surface .card-create-list-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 45px;
+  padding: 0 15px;
+  border-bottom: 1px solid #e5e9e2;
+  color: #64646d;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.admin-surface .card-create-list-label span:last-child {
+  color: #16805b;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.admin-surface .card-create-list {
+  display: grid;
+  gap: 7px;
+  max-height: 310px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.admin-surface .card-create-item {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 14px;
+  border: 1px solid #e4e8e1;
+  border-radius: 7px;
+  background: #ffffff;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: card-create-row-in 400ms cubic-bezier(0.22, 1, 0.36, 1) calc(170ms + var(--card-index, 0) * 34ms) both;
+}
+
+.admin-surface .card-create-item-code {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #27272a;
+  font-family: "Cascadia Mono", Consolas, "Microsoft YaHei", monospace;
+  font-size: 13px;
+  letter-spacing: 0;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-surface .card-create-item-copy {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d6ddd3;
+  border-radius: 6px;
+  color: #64646d;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.admin-surface .card-create-item-copy:hover {
+  color: #18181b;
+  border-color: #bedc62;
+  background: #eff9c9;
+  transform: translateY(-1px);
+}
+
+.admin-surface .card-create-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 28px 22px;
+  border-top: 1px solid #e4e7e1;
+  background: #ffffff;
+}
+
+.admin-surface .card-create-copy,
+.admin-surface .card-create-download {
+  min-width: 128px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 17px;
+  font-weight: 800;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background 180ms ease;
+}
+
+.admin-surface .card-create-copy:hover,
+.admin-surface .card-create-download:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(24, 24, 27, 0.11);
+}
+
+.admin-surface .card-create-copy:active,
+.admin-surface .card-create-download:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.admin-surface .card-create-button-icon {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  display: inline-block;
+  flex: 0 0 17px;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.admin-surface .card-create-button-icon.copy-icon::before,
+.admin-surface .card-create-button-icon.copy-icon::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+
+.admin-surface .card-create-button-icon.copy-icon::before {
+  top: 2px;
+  left: 2px;
+}
+
+.admin-surface .card-create-button-icon.copy-icon::after {
+  right: 1px;
+  bottom: 1px;
+  background: inherit;
+}
+
+.admin-surface .card-create-button-icon.download-icon {
+  display: grid;
+  place-items: center;
+}
+
+.admin-surface .card-create-copy.is-complete {
+  border-color: #7ed4ac;
+  color: #126c4e;
+  background: #e5f8ed;
+}
+
+.admin-surface .card-create-download.is-complete {
+  border-color: #16805b;
+  background: #16805b;
+}
+
+@keyframes card-create-mark-pop {
+  0% { opacity: 0; transform: scale(0.48) rotate(-14deg); }
+  62% { opacity: 1; transform: scale(1.12) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes card-create-mark-ring {
+  0% { opacity: 0.8; transform: scale(0.55); }
+  100% { opacity: 0; transform: scale(1.18); }
+}
+
+@keyframes card-create-row-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Cleaner CDK generation result modal. */
+.admin-surface .card-create-backdrop {
+  background: rgba(24, 24, 27, 0.28);
+  backdrop-filter: blur(2px);
+}
+
+.admin-surface .card-create-modal {
+  width: min(720px, calc(100vw - 32px));
+  border-radius: 10px;
+  box-shadow: 0 22px 70px rgba(24, 24, 27, 0.2), 0 4px 14px rgba(24, 24, 27, 0.08);
+}
+
+.admin-surface .card-create-modal-header {
+  grid-template-columns: 44px minmax(0, 1fr) 34px;
+  padding: 20px 22px;
+}
+
+.admin-surface .card-create-success-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #edf9f3;
+  animation-duration: 360ms;
+}
+
+.admin-surface .card-create-success-mark::before,
+.admin-surface .card-create-success-mark::after {
+  display: none;
+}
+
+.admin-surface .card-create-heading h2 {
+  font-size: 20px;
+}
+
+.admin-surface .card-create-eyebrow {
+  color: #5f7f1a;
+  font-size: 11px;
+}
+
+.admin-surface .card-create-modal-body {
+  padding: 18px 22px;
+}
+
+.admin-surface .card-create-list-wrap,
+.admin-surface .card-create-item {
+  border-radius: 8px;
+}
+
+.admin-surface .card-create-item {
+  animation-duration: 240ms;
+  animation-delay: calc(90ms + var(--card-index, 0) * 18ms);
+}
+
+.admin-surface .card-create-modal-footer {
+  padding: 16px 22px 20px;
+}
+
+.admin-surface .confirm-kicker {
+  display: block;
+  margin-bottom: 6px;
+  color: #8a6b00;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.admin-surface .confirm-message-box {
+  margin: 14px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #ead9a6;
+  border-radius: 8px;
+  background: #fff9e7;
+}
+
+.admin-surface .confirm-message-box p {
+  margin: 0;
+  color: #3f3f46;
+  line-height: 1.65;
+}
+
 @media (max-width: 1180px) {
   .admin-surface .control-stats {
     grid-template-columns: repeat(3, minmax(140px, 1fr));
@@ -1423,6 +1852,71 @@ body.admin-surface.is-api-loading .route-progress span {
 }
 
 @media (max-width: 620px) {
+  .admin-surface .card-create-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 12px;
+  }
+
+  .admin-surface .card-create-modal-header {
+    grid-template-columns: 44px minmax(0, 1fr) 34px;
+    gap: 12px;
+    padding: 20px 18px 18px;
+  }
+
+  .admin-surface .card-create-success-mark {
+    width: 44px;
+    height: 44px;
+  }
+
+  .admin-surface .card-create-heading h2 {
+    font-size: 20px;
+  }
+
+  .admin-surface .card-create-eyebrow {
+    display: none;
+  }
+
+  .admin-surface .card-create-modal-body {
+    padding: 16px 14px 18px;
+  }
+
+  .admin-surface .card-create-list {
+    max-height: min(42dvh, 310px);
+  }
+
+  .admin-surface .card-create-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 11px 12px;
+  }
+
+  .admin-surface .card-create-item-code {
+    width: 100%;
+    overflow: visible;
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .admin-surface .card-create-item-copy {
+    align-self: flex-end;
+  }
+
+  .admin-surface .card-create-modal-footer {
+    padding: 14px;
+  }
+
+  .admin-surface .card-create-copy,
+  .admin-surface .card-create-download {
+    min-width: 0;
+    flex: 1;
+    padding-inline: 12px;
+  }
+
   .admin-surface .admin-topbar::before,
   .admin-surface .user-actions > span:not(.admin-session-dot) {
     display: none;
@@ -1520,7 +2014,385 @@ body.admin-surface.is-api-loading .route-progress span {
   .admin-surface .upload-panel,
   .admin-surface .import-mode-switch,
   .admin-surface .pagination,
-  .admin-surface .nav-link.active::after {
+  .admin-surface .nav-link.active::after,
+  .admin-surface .card-create-backdrop,
+  .admin-surface .card-create-modal,
+  .admin-surface .card-create-success-mark,
+  .admin-surface .card-create-success-mark::before,
+  .admin-surface .card-create-success-mark::after,
+  .admin-surface .card-create-item {
     animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* 2026-07-21 polish: language switch spacing, confirm modal, CDK generated modal */
+.admin-surface .language-switcher {
+  top: 12px;
+  left: 14px;
+  border-color: #d8dcd3;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10px 28px rgba(24, 24, 27, 0.1);
+}
+
+.admin-surface .admin-title {
+  margin-top: 36px;
+}
+
+.admin-surface .system-select-panel {
+  z-index: 160;
+  padding-top: 0;
+  overflow: hidden;
+}
+
+.admin-surface .system-select-options {
+  padding: 7px 6px 6px;
+  scroll-padding-top: 7px;
+}
+
+.admin-surface .system-select-option:first-child {
+  margin-top: 0;
+}
+
+.admin-surface .system-select-option {
+  border-radius: 7px;
+}
+
+.admin-surface .system-select.open .system-select-options {
+  scroll-behavior: auto;
+  scroll-padding-top: 8px;
+}
+
+.admin-surface .system-select.open .system-select-option:first-child {
+  scroll-margin-top: 8px;
+}
+
+.admin-surface .confirm-backdrop {
+  z-index: 170;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(216, 255, 98, 0.12), transparent 32%),
+    rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(7px);
+}
+
+.admin-surface .confirm-dialog {
+  top: 50%;
+  z-index: 171;
+  width: min(470px, calc(100vw - 32px));
+  padding: 28px;
+  border: 1px solid #dfe4d7;
+  border-radius: 22px;
+  color: #18181b;
+  background:
+    linear-gradient(135deg, rgba(216, 255, 98, 0.2), transparent 34%),
+    #ffffff;
+  box-shadow: 0 34px 110px rgba(24, 24, 27, 0.24);
+}
+
+.admin-surface .confirm-dialog[data-tone="danger"] {
+  background:
+    linear-gradient(135deg, rgba(255, 107, 107, 0.14), transparent 34%),
+    #ffffff;
+}
+
+.admin-surface .confirm-dialog h2 {
+  color: #18181b;
+  font-size: 23px;
+  letter-spacing: -0.03em;
+}
+
+.admin-surface .confirm-kicker {
+  width: fit-content;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #38530b;
+  background: rgba(216, 255, 98, 0.42);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.admin-surface .confirm-dialog[data-tone="danger"] .confirm-kicker {
+  color: #8f1d1d;
+  background: #ffe7e1;
+}
+
+.admin-surface .confirm-message-box {
+  margin: 16px 0 20px;
+  padding: 16px 17px;
+  border: 1px solid #e7dcc0;
+  border-radius: 14px;
+  background: #fffaf0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.admin-surface .confirm-dialog[data-tone="danger"] .confirm-message-box {
+  border-color: #f0c7c0;
+  background: #fff6f4;
+}
+
+.admin-surface .confirm-message-box p,
+.admin-surface .confirm-dialog p {
+  margin: 0;
+  color: #3f3f46;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.admin-surface .confirm-actions {
+  gap: 12px;
+}
+
+.admin-surface .confirm-close {
+  top: 16px;
+  right: 16px;
+  border-color: #e1e5dd;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.admin-surface .confirm-close:hover {
+  color: #18181b;
+  background: #d8ff62;
+}
+
+.admin-surface .card-create-modal {
+  width: min(760px, calc(100vw - 34px));
+  overflow: hidden;
+  border: 1px solid rgba(24, 24, 27, 0.12);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 12% -10%, rgba(216, 255, 98, 0.36), transparent 32%),
+    linear-gradient(180deg, #ffffff, #f8faf5);
+  box-shadow: 0 34px 120px rgba(24, 24, 27, 0.26);
+}
+
+.admin-surface .card-create-modal-header {
+  border-bottom: 1px solid #e4e7de;
+  background:
+    linear-gradient(135deg, rgba(24, 24, 27, 0.96), rgba(24, 24, 27, 0.9)),
+    #18181b;
+}
+
+.admin-surface .card-create-heading span,
+.admin-surface .card-create-eyebrow {
+  color: #d8ff62;
+  font-family: Consolas, "Courier New", monospace;
+  letter-spacing: 0.12em;
+}
+
+.admin-surface .card-create-heading h2 {
+  color: #ffffff;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+
+.admin-surface .card-create-heading p {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.admin-surface .card-create-success-mark {
+  color: #111827;
+  background: linear-gradient(135deg, #d8ff62, #71e1a2);
+  box-shadow: 0 14px 32px rgba(216, 255, 98, 0.22);
+}
+
+.admin-surface .card-create-close {
+  color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.admin-surface .card-create-close:hover {
+  color: #18181b;
+  background: #d8ff62;
+}
+
+.admin-surface .card-create-list-label {
+  color: #52525b;
+}
+
+.admin-surface .card-create-item {
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .admin-surface .language-switcher {
+    top: 10px;
+    left: 10px;
+  }
+
+  .admin-surface .admin-title {
+    margin-top: 42px;
+  }
+}
+
+/* 2026-07-21 exception motion pass: stronger movement, restrained color. */
+body.admin-surface.is-admin-route-leaving .admin-content-frame {
+  pointer-events: none;
+  animation: admin-exception-route-out 150ms cubic-bezier(0.3, 0, 0.2, 1) both;
+  will-change: opacity, transform;
+}
+
+body.admin-surface.is-admin-route-leaving .admin-topbar {
+  opacity: 0.82;
+  transition: opacity 180ms ease;
+}
+
+.admin-surface .confirm-backdrop {
+  z-index: 170;
+  background:
+    linear-gradient(90deg, rgba(24, 24, 27, 0.18), rgba(24, 24, 27, 0.08)),
+    rgba(9, 9, 11, 0.52);
+  backdrop-filter: none;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.admin-surface .confirm-backdrop.open {
+  animation: admin-backdrop-in 240ms ease both;
+}
+
+.admin-surface .confirm-dialog {
+  z-index: 171;
+  width: min(470px, calc(100vw - 32px));
+  padding: 28px;
+  border: 1px solid #d4d4d8;
+  border-radius: 18px;
+  color: #18181b;
+  background: #ffffff;
+  box-shadow: 0 34px 110px rgba(24, 24, 27, 0.24);
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 18px)) scale(0.965);
+  transition:
+    opacity 210ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.admin-surface .confirm-dialog.open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  animation: none;
+}
+
+.admin-surface .confirm-dialog[data-tone="danger"],
+.admin-surface .confirm-dialog[data-tone="danger"].open {
+  background: #ffffff;
+}
+
+.admin-surface .confirm-dialog[data-tone="danger"].open {
+  animation: none;
+}
+
+.admin-surface .confirm-kicker,
+.admin-surface .confirm-dialog[data-tone="danger"] .confirm-kicker {
+  color: #52525b;
+  background: #f4f4f5;
+}
+
+.admin-surface .confirm-message-box,
+.admin-surface .confirm-dialog[data-tone="danger"] .confirm-message-box {
+  border-color: #e4e4e7;
+  background: #fafafa;
+}
+
+.admin-surface .confirm-close:hover {
+  color: #ffffff;
+  background: #18181b;
+}
+
+.admin-surface .card-create-modal {
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 34px 120px rgba(24, 24, 27, 0.24);
+}
+
+.admin-surface .card-create-modal-header {
+  border-bottom-color: #27272a;
+  background: #18181b;
+}
+
+.admin-surface .card-create-heading span,
+.admin-surface .card-create-eyebrow {
+  color: #d4d4d8;
+}
+
+.admin-surface .card-create-success-mark {
+  color: #18181b;
+  background: #f4f4f5;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24), inset 0 0 0 1px #ffffff;
+}
+
+.admin-surface .card-create-close:hover {
+  color: #18181b;
+  background: #f4f4f5;
+}
+
+@keyframes admin-exception-route-out {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(0, -6px, 0) scale(0.995); }
+}
+
+@keyframes admin-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 2026-07-22 admin motion performance pass. */
+@view-transition {
+  navigation: none;
+}
+
+.admin-surface .admin-sidebar,
+.admin-surface .admin-topbar,
+.admin-surface .admin-content-frame {
+  view-transition-name: none;
+}
+
+.admin-surface .card-create-backdrop {
+  backdrop-filter: none;
+}
+
+.admin-surface .card-create-modal {
+  transition-duration: 180ms, 240ms;
+}
+
+.admin-surface .card-create-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
+  opacity: 1;
+  transform: none;
+  animation: none;
+}
+
+.admin-surface .card-create-item.motion-item {
+  animation: card-create-row-in 220ms cubic-bezier(0.22, 1, 0.36, 1) calc(70ms + var(--card-index, 0) * 14ms) both;
+}
+
+@keyframes admin-confirm-in {
+  0% { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.965); }
+  72% { opacity: 1; transform: translate(-50%, calc(-50% - 2px)) scale(1.006); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes admin-confirm-danger-in {
+  0% { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.965); }
+  52% { opacity: 1; transform: translate(calc(-50% - 2px), -50%) scale(1.006); }
+  68% { transform: translate(calc(-50% + 2px), -50%) scale(1); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.admin-surface.is-admin-route-leaving .admin-content-frame,
+  .admin-surface .confirm-backdrop.open,
+  .admin-surface .confirm-dialog.open,
+  .admin-surface .confirm-dialog[data-tone="danger"].open {
+    animation: none !important;
+  }
+
+  .admin-surface .confirm-dialog.open {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
   }
 }

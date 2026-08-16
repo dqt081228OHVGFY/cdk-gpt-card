@@ -1,11 +1,22 @@
 {% extends "admin_base.html" %}
-{% block title %}cdk站点测活 · GPT发卡网{% endblock %}
+{% block title %}独立测活 · GPT发卡网{% endblock %}
 {% block admin_content %}
 <section class="page-heading">
-  <span class="page-index">SUB2 / MONITOR</span>
-  <h1>cdk站点测活</h1>
-  <p>专属 sub2 号池只作为监测器；活号标绿，401 等失败死号标红，死号不会参与 CDK 兑换。</p>
+  <span class="page-index">CODEX / HEALTH</span>
+  <h1>独立测活</h1>
+  <p>直接请求 Codex Models 接口；商品可单独控制测活开关、单次时间和 24h 次数。</p>
 </section>
+
+<form class="filters files-filters" method="get" action="/admin/liveness">
+  <select name="product_id" aria-label="商品筛选">
+    <option value="">全部商品</option>
+    {% for product in products %}
+    <option value="{{ product.id }}" {% if selected_product_id == product.id %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+    {% endfor %}
+  </select>
+  <button class="secondary-action filter-action" type="submit">筛选</button>
+  <a class="ghost-action filter-reset" href="/admin/liveness">重置</a>
+</form>
 
 <section class="stats-grid control-stats liveness-stats">
   {% for label, value in stats.items() %}
@@ -18,52 +29,36 @@
 </section>
 
 <section class="liveness-grid">
-  {% if can_config_liveness %}
-  <form class="liveness-panel" method="post" action="/admin/liveness/pool">
-    <div class="section-heading"><span>SUB2 MONITOR</span><h2>专属测活监测器</h2></div>
-    <div class="field">
-      <label for="quotaPoolUrl">sub2 地址</label>
-      <input id="quotaPoolUrl" name="quota_pool_base_url" autocomplete="off" placeholder="https://sub2.example.com" value="{{ liveness_pool_base_url or '' }}">
-    </div>
-    <div class="field">
-      <label for="quotaPoolKey">管理秘钥</label>
-      <input id="quotaPoolKey" name="quota_pool_management_key" type="password" autocomplete="new-password" placeholder="{{ '留空则不修改' if liveness_has_secret else '请输入管理秘钥' }}">
-    </div>
-    <p class="muted-text">该配置只用于本页面测活和后台 20 分钟同步，不参与公开 SUB 调用或兑换交付。</p>
-    <button class="primary-action compact" type="submit">保存监测器配置</button>
-  </form>
-  {% else %}
   <article class="liveness-panel monitor-status-panel">
-    <div class="section-heading"><span>MONITOR STATUS</span><h2>专属测活监测器</h2></div>
-    {% if has_liveness_pool %}
-    <p class="monitor-state is-online"><span></span>已连接</p>
-    <p class="muted-text">sub2 地址和管理秘钥仅超级管理员可见；普通管理员只查看账号测活状态、统计与错误标签。</p>
-    {% else %}
-    <p class="monitor-state is-offline"><span></span>待配置</p>
-    <p class="muted-text">请联系超级管理员先配置专属 sub2 监测器；配置前不会触发测活。</p>
-    {% endif %}
+    <div class="section-heading"><span>BUILT-IN</span><h2>内置 Codex 测活</h2></div>
+    <p class="monitor-state {{ 'is-online' if health_ready else 'is-offline' }}"><span></span>{{ "可用" if health_ready else "配置异常" }}</p>
     <dl class="monitor-meta">
-      <div><dt>最近手动刷新</dt><dd>{{ liveness_last_sync_at|full_dt }}</dd></div>
-      <div><dt>配置状态</dt><dd>{{ "已隐藏" if has_liveness_pool else "未配置" }}</dd></div>
+      <div><dt>最近同步</dt><dd>{{ liveness_last_sync_at|full_dt }}</dd></div>
+      <div><dt>临时未知</dt><dd>隔离 10 分钟后再参与候选</dd></div>
     </dl>
   </article>
-  {% endif %}
 
-  {% if can_config_liveness %}
   <form class="liveness-panel" method="post" action="/admin/liveness/upload-check" enctype="multipart/form-data">
     <div class="section-heading"><span>UPLOAD</span><h2>上传并测活</h2></div>
+    <div class="field">
+      <label for="livenessUploadProduct">所属商品</label>
+      <select id="livenessUploadProduct" name="product_id" required>
+        {% for product in products %}
+        <option value="{{ product.id }}" {% if selected_product_id == product.id %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <label class="upload-card compact-upload" data-compact-upload>
       <input name="file" type="file" accept=".json,.cpa,.sub,.sub2,.zip,application/json,application/zip,application/x-zip-compressed" multiple required data-compact-upload-input>
       <span data-compact-upload-label>选择 JSON / CPA / SUB / SUB2 / ZIP</span>
-      <small>导入后立即放入专属监测器测活</small>
+      <small>导入后立即使用该商品测活策略检测</small>
     </label>
-    <button class="secondary-action compact" type="submit" {% if not has_liveness_pool %}disabled title="请先保存专属监测器"{% endif %}>上传并测活</button>
+    <button class="secondary-action compact" type="submit" {% if not health_ready %}disabled title="Codex 测活配置异常"{% endif %}>上传并测活</button>
   </form>
-  {% endif %}
 
-  {% if can_config_liveness %}
   <form class="liveness-panel" method="post" action="/admin/liveness/refresh">
-    <div class="section-heading"><span>REFRESH</span><h2>手动刷新额度</h2></div>
+    <div class="section-heading"><span>REFRESH</span><h2>手动刷新</h2></div>
+    <input type="hidden" name="product_id" value="{{ selected_product_id or '' }}">
     <div class="field">
       <label for="refreshMode">刷新模式</label>
       <select id="refreshMode" name="refresh_mode">
@@ -74,53 +69,44 @@
         {% endfor %}
       </select>
     </div>
-    <p class="muted-text">立即把库存重新放入专属监测器测活，不等待 20 分钟周期；单次最多刷新 50 个账号。</p>
-    <button class="primary-action compact" type="submit" {% if not has_liveness_pool %}disabled title="请先由超级管理员配置专属监测器"{% endif %}>手动刷新额度</button>
+    <p class="muted-text">单次最多 50 个账号；unknown 和临时网络错误不会直接判死。</p>
+    <button class="primary-action compact" type="submit" {% if not health_ready %}disabled title="Codex 测活配置异常"{% endif %}>手动刷新</button>
   </form>
-  {% endif %}
 
-  {% if can_config_liveness %}
   <form class="liveness-panel" method="post" action="/admin/liveness/sync">
-    <div class="section-heading"><span>SYNC</span><h2>同步账号状态</h2></div>
-    <p class="muted-text">系统会自动每 20 分钟同步一次；这里可手动触发最多 50 个到期账号。</p>
-    <button class="secondary-action compact" type="submit" {% if not has_liveness_pool %}disabled title="请先保存专属监测器"{% endif %}>立即同步</button>
+    <div class="section-heading"><span>SYNC</span><h2>同步到期账号</h2></div>
+    <input type="hidden" name="product_id" value="{{ selected_product_id or '' }}">
+    <p class="muted-text">系统会周期同步；这里可手动触发最多 50 个到期账号。</p>
+    <button class="secondary-action compact" type="submit" {% if not health_ready %}disabled title="Codex 测活配置异常"{% endif %}>立即同步</button>
   </form>
-  {% endif %}
 </section>
 
 <form method="post" action="/admin/liveness/check" class="table-form list-form files-list-form liveness-table" data-bulk-form>
   <div class="table-actions split-actions">
-    {% if can_config_liveness %}
     <div class="bulk-actions">
       <span class="selected-count" data-selected-count>已选 0 个</span>
-      <button class="secondary-action slim" type="submit" formaction="/admin/liveness/refresh" {% if has_liveness_pool %}data-bulk-action{% endif %} disabled title="{{ '' if has_liveness_pool else '请先由超级管理员配置专属监测器' }}">刷新选中额度</button>
+      <button class="secondary-action slim" type="submit" data-bulk-action disabled>检测选中账号</button>
+      <button class="secondary-action slim" type="submit" formaction="/admin/liveness/refresh" data-bulk-action disabled>刷新选中账号</button>
       <button
         class="danger-action slim"
         type="submit"
         formaction="/admin/liveness/delete-dead"
         data-bulk-action
         data-confirm-card-action
-        data-confirm-message="确认删除选中的失败账号？系统会将其中的死号作废并移出可兑换库存。"
+        data-confirm-message="确认删除选中的死号？系统会将其中的死号作废并移出可兑换库存。"
         data-confirm-label="删除死号"
         disabled
       >删除选中死号</button>
     </div>
-    {% else %}
-    <div class="readonly-actions">
-      <span class="monitor-state is-online"><span></span>只读状态视图</span>
-      <p class="muted-text">普通管理员不能配置 sub2、上传测活、手动刷新额度或删除死号。</p>
-    </div>
-    {% endif %}
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          {% if can_config_liveness %}
           <th><input type="checkbox" data-check-all aria-label="全选本页账号"></th>
-          {% endif %}
           <th>文件名</th>
-          <th>分组</th>
+          <th>商品</th>
+          <th>状态</th>
           <th>错误标签</th>
           <th class="center time-col">测活时间</th>
           <th class="center time-col">上传时间</th>
@@ -130,15 +116,18 @@
       <tbody>
         {% for file in recent_files %}
         <tr class="{{ 'problem' if file.account_status == 'unavailable' else 'normal' if file.account_status == 'available' and file.account_checked_at else 'unchecked' }}">
-          {% if can_config_liveness %}
           <td><input type="checkbox" name="ids" value="{{ file.id }}" data-status="{{ file.status }}" aria-label="选择文件 {{ file.original_name }}"></td>
-          {% endif %}
           <td class="mono">{{ file.original_name }}</td>
+          <td>{{ file.product.name if file.product else "-" }}</td>
           <td>
             {% if file.status == "available" and file.account_status == "available" and file.account_checked_at %}
             <span class="status account-available">活</span>
             {% elif file.status == "available" and file.account_status == "unavailable" %}
             <span class="status account-unavailable">死</span>
+            {% elif file.status == "available" and file.account_status == "unknown" %}
+            <span class="status account-unknown">暂时未知</span>
+            {% elif file.status == "available" and file.account_status == "checking" %}
+            <span class="status account-checking">检测中</span>
             {% elif file.status == "available" %}
             <span class="status account-unchecked">待测</span>
             {% else %}
@@ -151,7 +140,7 @@
           <td class="center">{{ "系统" if current_user.role == "admin" and file.uploader.role == "super_admin" else file.uploader.username }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="{{ 7 if can_config_liveness else 6 }}" class="empty">暂无账号文件</td></tr>
+        <tr><td colspan="8" class="empty">暂无账号文件</td></tr>
         {% endfor %}
       </tbody>
     </table>

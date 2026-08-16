@@ -19,10 +19,19 @@
         <h2>账号 JSON 入库</h2>
         <p>支持 JSON、CPA、SUB、SUB2 或包含这些文件的 ZIP。</p>
       </div>
-      <div class="upload-limit" aria-label="单批最大 25MB">
-        <strong>25MB</strong>
+      <div class="upload-limit" aria-label="单批最大 500MB">
+        <strong>500MB</strong>
         <span>单批上限</span>
       </div>
+    </div>
+
+    <div class="field">
+      <label for="uploadProduct">所属商品</label>
+      <select id="uploadProduct" name="product_id" required>
+        {% for product in products %}
+        <option value="{{ product.id }}" {% if product.status == "listed" %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+        {% endfor %}
+      </select>
     </div>
 
     <div class="upload-file-box">
@@ -51,7 +60,7 @@
       </div>
       <div>
         <span>大小</span>
-        <strong>不超过 25MB / 500 个账号</strong>
+        <strong>不超过 500MB / 500 个账号</strong>
       </div>
     </div>
 
@@ -78,6 +87,14 @@
     </div>
 
     <div class="manual-import-fields">
+      <div class="field">
+        <label for="manualProduct">所属商品</label>
+        <select id="manualProduct" name="product_id" required>
+          {% for product in products %}
+          <option value="{{ product.id }}" {% if product.status == "listed" %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="field">
         <label for="manualFilename">文件名</label>
         <input id="manualFilename" name="filename" value="manual-account.json" autocomplete="off" required>

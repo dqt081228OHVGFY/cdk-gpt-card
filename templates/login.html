@@ -43,13 +43,13 @@
         </div>
       </div>
 
-      {% if message %}<div class="login-error login-success" role="status"><span aria-hidden="true">✓</span>{{ message }}</div>{% endif %}
-      {% if error %}<div class="login-error" role="alert"><span aria-hidden="true">!</span>{{ error }}</div>{% endif %}
+      {% if message %}<div data-site-flash data-message-type="success" hidden>{{ message }}</div>{% endif %}
+      {% if error %}<div data-site-flash data-message-type="error" hidden>{{ error }}</div>{% endif %}
       <button class="portal-primary" type="submit" data-login-submit><span>进入管理控制台</span><b aria-hidden="true">→</b></button>
       <p class="form-footnote"><span aria-hidden="true">⌁</span> 登录失败次数过多将被临时限制</p>
     </form>
   </section>
 
 </main>
-<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+<script src="{{ url_for('static', path='app.js') }}?v=exception-motion-20260721-1"></script>
 {% endblock %}

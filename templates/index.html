@@ -3,8 +3,6 @@
 {% block head %}<style>@view-transition { navigation: auto; }</style>{% endblock %}
 {% block body %}
 <main class="portal-shell">
-  <div id="redeemToast" class="toast" hidden role="status" aria-live="polite"></div>
-
   <header class="portal-header" data-portal-reveal>
     <a class="portal-brand" href="/" aria-label="GPT发卡网首页">
       <span class="portal-brand-mark" aria-hidden="true"><i></i><i></i></span>
@@ -48,6 +46,43 @@
         </div>
       </div>
 
+      <section class="delivery-inventory-board" aria-labelledby="deliveryInventoryTitle" aria-live="polite">
+        <div class="delivery-inventory-heading">
+          <div>
+            <span class="live-dot" aria-hidden="true"></span>
+            <b id="deliveryInventoryTitle">当前交付状态</b>
+          </div>
+          <small>实时可交付商品</small>
+        </div>
+        <div class="delivery-products" data-delivery-products>
+          {% for product in delivery_products %}
+          {% set stock_class = 'stock-empty' if product.available == 0 else ('stock-low' if product.available <= product.low_stock_threshold else 'stock-ready') %}
+          <article class="product-stock-card {{ stock_class }}" data-product-id="{{ product.id }}">
+            <header class="product-stock-header">
+              <span class="stock-signal"><i aria-hidden="true"></i><b data-product-stock-label>{% if product.available == 0 %}无库存{% elif product.available <= product.low_stock_threshold %}库存告急{% else %}库存充足{% endif %}</b></span>
+              <span class="product-listed-chip">已上架</span>
+            </header>
+            <div class="delivery-product-name">
+              <strong data-product-name>{{ product.name }}</strong>
+              <small data-product-sku>{{ product.sku }}</small>
+            </div>
+            <div class="product-stock-metrics">
+              <div class="delivery-metric">
+                <strong data-product-available data-value="{{ product.available }}">{{ product.available }}</strong>
+                <small>可用库存</small>
+              </div>
+              <div class="delivery-metric listed">
+                <strong data-product-cards data-value="{{ product.pending_cards }}">{{ product.pending_cards }}</strong>
+                <small>在售 CDK</small>
+              </div>
+            </div>
+          </article>
+          {% else %}
+          <p class="delivery-products-empty">暂无可提货商品</p>
+          {% endfor %}
+        </div>
+      </section>
+
       <ul class="promise-list" aria-label="交付保障">
         <li><span>01</span><b>一户一码</b><small>独立账号绑定</small></li>
         <li><span>02</span><b>防爆破</b><small>异常请求限制</small></li>
@@ -71,8 +106,15 @@
             <small id="codeHint">自动识别 32 位十六进制码</small>
           </div>
           <div class="code-input-wrap">
-            <textarea id="cardCode" name="card_code" maxlength="4000" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入 32 位十六进制兑换码" aria-describedby="codeHint" required></textarea>
+            <textarea id="cardCode" name="card_code" maxlength="4000" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="5782046e350f522c7ac81297717ccb3b" aria-describedby="codeHint" required></textarea>
             <span data-code-count aria-hidden="true">0</span>
+          </div>
+          <div class="cdk-input-examples" aria-label="CDK 输入示例">
+            <span>批量输入示例</span>
+            <code>0123456789abcdef0123456789abcdef</code>
+            <code>fedcba9876543210fedcba9876543210</code>
+            <code>a1b2c3d4e5f60718293a4b5c6d7e8f90</code>
+            <small>仅展示格式，每行一条即可批量兑换</small>
           </div>
         </div>
         <input type="hidden" name="delivery" value="link">
@@ -96,6 +138,23 @@
         </fieldset>
 
         <button class="portal-primary" type="submit"><span>生成临时下载链接</span><b aria-hidden="true">→</b></button>
+        <section class="redeem-progress-card" data-redeem-progress hidden aria-live="polite">
+          <div class="redeem-progress-head">
+            <div>
+              <span class="redeem-progress-kicker">交付检查</span>
+              <strong data-progress-title>正在准备提货任务</strong>
+            </div>
+            <span data-progress-count>0 / 0</span>
+          </div>
+          <div class="redeem-progress-track"><i data-progress-bar></i></div>
+          <ol class="redeem-progress-stages" aria-label="提货进度">
+            <li data-progress-stage="0"><i aria-hidden="true"></i><span>验码</span></li>
+            <li data-progress-stage="1"><i aria-hidden="true"></i><span>验活</span></li>
+            <li data-progress-stage="2"><i aria-hidden="true"></i><span>封装</span></li>
+            <li data-progress-stage="3"><i aria-hidden="true"></i><span>完成</span></li>
+          </ol>
+          <p data-progress-detail>该批次包含提货验货商品，进度以真实测活结果为准</p>
+        </section>
         <p class="form-footnote"><span aria-hidden="true">⌁</span> 兑换行为将记录时间与使用状态</p>
       </form>
 
@@ -107,11 +166,11 @@
           <p id="deliveryFilename">-</p>
         </div>
         <a class="portal-primary compact" id="deliveryLink" href="#">下载文件 <b aria-hidden="true">↓</b></a>
-        <div class="expiry-line"><span></span><b id="deliveryExpiry">链接将在 24:00:00 后失效</b></div>
+        <div class="expiry-line"><span></span><b>一次性链接，下载后立即失效</b></div>
       </section>
     </div>
   </section>
 
 </main>
-<script src="{{ url_for('static', path='app.js') }}?v=security-motion-20260714-9"></script>
+<script src="{{ url_for('static', path='app.js') }}?v=exception-motion-20260721-1"></script>
 {% endblock %}

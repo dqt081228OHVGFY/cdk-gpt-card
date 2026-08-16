@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.database import Base, SessionLocal, engine
 from app.main import app, startup
-from app.models import Card, Redemption, SecurityAttempt, TemporaryDownload, User
+from app.models import Card, ManagedFile, Redemption, SecurityAttempt, TemporaryDownload, User
 from app.security import hash_password
 from app.services import reset_storage_for_tests
 
@@ -145,6 +145,11 @@ def prepare_redeemable_card(client: TestClient) -> tuple[int, str]:
         follow_redirects=False,
     )
     assert upload.status_code == 303
+    with SessionLocal() as db:
+        managed = db.query(ManagedFile).one()
+        managed.account_status = "available"
+        managed.account_checked_at = datetime.utcnow()
+        db.commit()
     created = client.post(
         "/admin/cards/create",
         data={"file_count": 1, "quantity": 1},
@@ -165,7 +170,7 @@ def redeem_as_link(client: TestClient, card_code: str) -> dict:
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["expires_in"] == 86400
+    assert payload["expires_in"] == 21600
     local_download_path(payload["download_url"])
     return payload
 
@@ -182,7 +187,7 @@ def test_direct_delivery_parameter_cannot_bypass_temporary_link() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     payload = response.json()
-    assert payload["expires_in"] == 86400
+    assert payload["expires_in"] == 21600
     local_download_path(payload["download_url"])
 
 
@@ -209,6 +214,8 @@ def test_cpa_to_sub_and_sub_to_cpa_conversion_downloads() -> None:
         sub_payload = sub_download.json()
         assert sub_payload["proxies"] == []
         assert sub_payload["accounts"][0]["credentials"]["email"] == "source@example.com"
+        with SessionLocal() as db:
+            assert db.query(TemporaryDownload).filter_by(purpose="convert").count() == 0
 
         to_cpa = client.post(
             "/api/convert",
@@ -229,6 +236,8 @@ def test_cpa_to_sub_and_sub_to_cpa_conversion_downloads() -> None:
         assert converted["account_id"] == "acct_delivery"
         assert converted["email"] == "source@example.com"
         assert converted["refresh_token"] == "refresh_delivery"
+        with SessionLocal() as db:
+            assert db.query(TemporaryDownload).filter_by(purpose="convert").count() == 0
 
 
 def test_multiple_cpa_uploads_convert_to_one_json_array() -> None:
@@ -262,6 +271,8 @@ def test_multiple_cpa_uploads_convert_to_one_json_array() -> None:
         repeat = client.get(local_download_path(result["download_url"]))
         assert repeat.status_code == 410
         assert not file_path.exists()
+        with SessionLocal() as db:
+            assert db.query(TemporaryDownload).filter_by(purpose="convert").count() == 0
 
 
 def test_raw_chatgpt_auth_json_converts_to_flat_cpa_and_sub() -> None:
@@ -323,7 +334,10 @@ def test_redeem_link_uses_public_domain_and_is_downloadable() -> None:
         _, card_code = prepare_redeemable_card(client)
         result = redeem_as_link(client, card_code)
         with SessionLocal() as db:
-            file_path = Path(db.query(TemporaryDownload).one().file_path)
+            link = db.query(TemporaryDownload).one()
+            file_path = Path(link.file_path)
+            assert link.purpose == "redeem"
+            assert link.expires_at - link.created_at == timedelta(hours=6)
 
         download = client.get(local_download_path(result["download_url"]))
         assert download.status_code == 200
@@ -334,12 +348,7 @@ def test_redeem_link_uses_public_domain_and_is_downloadable() -> None:
         assert not file_path.exists()
 
     with SessionLocal() as db:
-        link = db.query(TemporaryDownload).one()
-        assert link.purpose == "redeem"
-        assert link.download_count == 1
-        assert link.last_download_at is not None
-        assert link.revoked_at is not None
-        assert link.expires_at - link.created_at == timedelta(hours=24)
+        assert db.query(TemporaryDownload).count() == 0
 
 
 def test_lookup_restores_the_original_file_without_consuming_another_redemption() -> None:
@@ -358,7 +367,11 @@ def test_lookup_restores_the_original_file_without_consuming_another_redemption(
         assert lookup.status_code == 200
         payload = lookup.json()
         assert payload["ok"] is True
-        assert payload["expires_in"] == 86400
+        assert payload["expires_in"] == 21600
+
+        with SessionLocal() as db:
+            lookup_link = db.query(TemporaryDownload).filter_by(purpose="lookup").one()
+            assert lookup_link.expires_at - lookup_link.created_at == timedelta(hours=6)
 
         restored = client.get(local_download_path(payload["download_url"]))
         assert restored.status_code == 200
@@ -368,8 +381,7 @@ def test_lookup_restores_the_original_file_without_consuming_another_redemption(
         card = db.get(Card, card_id)
         assert card.redemption_count == 1
         assert db.query(Redemption).filter_by(card_id=card_id).count() == 1
-        lookup_link = db.query(TemporaryDownload).filter_by(purpose="lookup").one()
-        assert lookup_link.expires_at - lookup_link.created_at == timedelta(hours=24)
+        assert db.query(TemporaryDownload).filter_by(purpose="lookup").count() == 0
 
 
 def test_expired_link_is_cleaned_and_admin_can_regenerate_it() -> None:
@@ -395,7 +407,7 @@ def test_expired_link_is_cleaned_and_admin_can_regenerate_it() -> None:
         assert regenerated.status_code == 200
         regenerated_result = regenerated.json()
         assert regenerated_result["ok"] is True
-        assert regenerated_result["expires_in"] == 86400
+        assert regenerated_result["expires_in"] == 21600
         assert regenerated_result["download_url"] != first_result["download_url"]
         assert not first_file.exists()
 
@@ -404,12 +416,8 @@ def test_expired_link_is_cleaned_and_admin_can_regenerate_it() -> None:
         assert replacement.json()["email"] == "delivery@example.com"
 
     with SessionLocal() as db:
-        old_link = db.get(TemporaryDownload, first_link_id)
-        assert old_link.revoked_at is not None
-        new_link = db.query(TemporaryDownload).filter(TemporaryDownload.id != first_link_id).one()
-        assert new_link.purpose == "regenerate"
-        assert new_link.redemption_id == redemption_id
-        assert new_link.expires_at - new_link.created_at == timedelta(hours=24)
+        assert db.get(TemporaryDownload, first_link_id) is None
+        assert db.query(TemporaryDownload).count() == 0
 
 
 def test_redeem_brute_force_is_rate_limited_with_429() -> None:

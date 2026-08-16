@@ -89,7 +89,11 @@ def test_admin_login_and_inventory():
     assert response.status_code == 303
     inventory = client.get("/api/inventory")
     assert inventory.status_code == 200
-    assert inventory.json() == {"inventory": 0}
+    payload = inventory.json()
+    assert payload["inventory"] == 0
+    assert payload["normal"] == 0
+    assert payload["products"][0]["sku"] == "legacy"
+    assert payload["products"][0]["available"] == 0
 
 
 def test_login_error_keeps_entered_credentials():
@@ -179,6 +183,29 @@ def test_card_management_page_uses_directly_redeemable_statuses():
     assert '<th class="center">序号</th>' in page.text
     assert '<td class="center">1</td>' in page.text
     assert '<th class="center time-col">创建时间</th>' in page.text
+
+
+def test_card_creation_returns_generated_codes_for_async_modal():
+    reset_db()
+    client = TestClient(app)
+    login(client)
+
+    response = client.post(
+        "/admin/cards/create",
+        data={"file_count": 1, "quantity": 3, "max_redemptions": 1},
+        headers={"Accept": "application/json", "X-Requested-With": "fetch"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["count"] == 3
+    assert len(payload["codes"]) == 3
+    assert len(set(payload["codes"])) == 3
+    assert all(re.fullmatch(r"[0-9a-f]{32}", code) for code in payload["codes"])
+    assert payload["filename"].startswith("cdk_")
+    assert payload["filename"].endswith(".txt")
     assert '<th class="center">操作用户</th>' in page.text
     assert page.text.index("创建时间") < page.text.index("操作用户")
     assert 'class="cards-code-col"' in page.text
@@ -271,14 +298,12 @@ def test_public_inventory_card_matches_small_stock_range():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     styles_css = Path("static/styles.css").read_text(encoding="utf-8")
 
-    assert '<strong id="inventoryCount">0</strong>' in index_html
+    assert 'id="inventoryCount" data-value="{{ inventory.normal }}"' in index_html
     assert 'fetch("/api/inventory"' in app_js
-    inventory_styles = re.search(r"\.inventory-card\s*\{(?P<body>[^}]+)\}", styles_css).group("body")
-    inventory_count_styles = re.search(r"\.inventory-card strong\s*\{(?P<body>[^}]+)\}", styles_css).group("body")
-    assert "align-items: end" in inventory_styles
-    assert 'font-family: "Aptos Display"' in inventory_count_styles
-    assert "当前可用库存" in index_html
-    assert "AVAILABLE ACCOUNTS" in index_html
+    assert "data-delivery-products" in index_html
+    assert "当前交付状态" in index_html
+    assert "syncDeliveryProducts(data.products)" in app_js
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in styles_css
 
 
 def test_generated_card_codes_are_32_random_hex_characters():
@@ -360,7 +385,7 @@ def test_upload_create_card_and_redeem_json():
 
     response = client.post("/api/redeem", data={"card_code": code, "output_format": "cpa"})
     assert response.status_code == 200
-    assert response.json()["expires_in"] == 86400
+    assert response.json()["expires_in"] == 21600
     download = client.get(urlsplit(response.json()["download_url"]).path)
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/json"
@@ -432,7 +457,7 @@ def test_redeem_sub_returns_temporary_sub2api_json_link():
 
     response = client.post("/api/redeem", data={"card_code": code, "output_format": "sub"})
     assert response.status_code == 200
-    assert response.json()["expires_in"] == 86400
+    assert response.json()["expires_in"] == 21600
     download = client.get(urlsplit(response.json()["download_url"]).path)
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/json"
@@ -1211,7 +1236,7 @@ def test_multiple_cards_redeem_as_one_cpa_zip():
 
     response = client.post("/api/redeem", data={"card_code": "\n".join(codes), "output_format": "cpa"})
     assert response.status_code == 200
-    assert response.json()["expires_in"] == 86400
+    assert response.json()["expires_in"] == 21600
     download = client.get(urlsplit(response.json()["download_url"]).path)
     assert download.status_code == 200
     assert download.headers["content-type"] == "application/zip"

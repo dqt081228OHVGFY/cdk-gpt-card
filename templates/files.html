@@ -9,6 +9,12 @@
 <form class="filters files-filters" method="get" action="/admin/files">
   <input class="file-name-filter" name="q" placeholder="搜索文件名" value="{{ filters.q }}" aria-label="搜索文件名">
   <input class="card-code-filter" name="card_code" placeholder="卡密精确搜索" value="{{ filters.card_code }}" aria-label="卡密精确搜索">
+  <select name="product_id" aria-label="商品筛选">
+    <option value="">全部商品</option>
+    {% for product in products %}
+    <option value="{{ product.id }}" {% if filters.product_id|string == product.id|string %}selected{% endif %}>{{ product.name }} · {{ product.sku }}</option>
+    {% endfor %}
+  </select>
   <select name="status" aria-label="文件状态">
     <option value="">全部状态</option>
     {% for value in ["available", "locked", "sold", "voided"] %}
@@ -20,6 +26,7 @@
     <option value="unchecked"{% if filters.account_status == "unchecked" %} selected{% endif %}>未检测</option>
     <option value="available"{% if filters.account_status == "available" %} selected{% endif %}>活</option>
     <option value="unavailable"{% if filters.account_status == "unavailable" %} selected{% endif %}>死</option>
+    <option value="unknown"{% if filters.account_status == "unknown" %} selected{% endif %}>暂时未知</option>
   </select>
   <input type="hidden" name="page_size" value="{{ pagination.page_size }}">
   <button class="secondary-action filter-action" type="submit">筛选</button>
@@ -29,16 +36,15 @@
   <div class="table-actions split-actions">
     <div class="bulk-actions">
       <span class="selected-count" data-selected-count>已选 0 个</span>
-      <select class="bulk-status-select" name="target_status" aria-label="目标状态">
+      <select class="bulk-status-select" name="target_status" disabled aria-label="目标状态">
         {% for value in ["available", "locked", "sold", "voided"] %}
         <option value="{{ value }}">{{ "已提取" if value == "sold" else value|status_label }}</option>
         {% endfor %}
       </select>
       <button class="secondary-action slim" type="submit" formaction="/admin/files/status" data-bulk-action data-status-update disabled>批量修改状态</button>
       <button class="secondary-action slim" type="submit" formaction="/admin/files/download" data-bulk-action data-file-download data-allowed-statuses="available,locked" disabled>批量下载</button>
-      {% if current_user.role == "super_admin" %}
       <button class="secondary-action slim" type="submit" formaction="/admin/files/account-status" data-bulk-action data-account-check disabled>批量检测账号状态</button>
-      {% endif %}
+      <button class="danger-action slim" type="submit" formaction="/admin/files/delete" data-bulk-action data-confirm-card-action data-confirm-message="确定永久删除选中的账号文件？此操作不可恢复；已交付或已兑换关联的账号会被拒绝删除。" data-confirm-label="确认永久删除" disabled>批量删除账号</button>
     </div>
     <div class="create-actions"></div>
   </div>
@@ -49,6 +55,7 @@
           <th><input type="checkbox" data-check-all aria-label="全选本页文件"></th>
           <th class="center">序号</th>
           <th>文件名</th>
+          <th>商品</th>
           <th>识别格式</th>
           <th>账号邮箱</th>
           <th class="center">状态</th>
@@ -68,6 +75,7 @@
           <td><input type="checkbox" name="ids" value="{{ file.id }}" data-status="{{ file.status }}" aria-label="选择文件 {{ file.original_name }}"></td>
           <td class="center">{{ loop.index }}</td>
           <td class="mono">{{ file.original_name }}</td>
+          <td>{{ file.product.name if file.product else "-" }}</td>
           <td><span class="format-badge {{ file.source_format }}">{{ file.source_format|upper }}</span></td>
           <td class="mono">{{ file.account_email or "-" }}</td>
           <td class="center"><span class="status {{ file.status }}">{{ "已提取" if file.status == "sold" else file.status|status_label }}</span></td>
@@ -76,6 +84,10 @@
             <span class="status account-{{ file.account_status }}">{{ file.account_status|account_status_label }}</span>
             {% elif file.account_status == "unavailable" %}
             <span class="status account-{{ file.account_status }}">{{ file.account_status|account_status_label }}</span>
+            {% elif file.account_status == "unknown" %}
+            <span class="status account-unknown">{{ file.account_status|account_status_label }}</span>
+            {% elif file.account_status == "checking" %}
+            <span class="status account-checking">{{ file.account_status|account_status_label }}</span>
             {% else %}
             <span class="status account-unchecked">未检测</span>
             {% endif %}
@@ -89,7 +101,7 @@
           <td class="center">{{ "系统" if current_user.role == "admin" and file.uploader.role == "super_admin" else file.uploader.username }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="14" class="empty">暂无文件</td></tr>
+        <tr><td colspan="15" class="empty">暂无文件</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -101,9 +113,10 @@
       <form method="get" action="/admin/files" class="page-size-form">
         <input type="hidden" name="q" value="{{ filters.q }}">
         <input type="hidden" name="card_code" value="{{ filters.card_code }}">
+        <input type="hidden" name="product_id" value="{{ filters.product_id }}">
         <input type="hidden" name="status" value="{{ filters.status }}">
         <input type="hidden" name="account_status" value="{{ filters.account_status }}">
-        <select name="page_size" aria-label="每页显示数量" onchange="this.form.submit()">
+        <select name="page_size" aria-label="每页显示数量" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
           {% for size in pagination.page_sizes %}
           <option value="{{ size }}" {% if pagination.page_size == size %}selected{% endif %}>每页 {{ size }}</option>
           {% endfor %}
@@ -111,12 +124,12 @@
       </form>
       <div class="pager-links">
       {% if pagination.has_prev %}
-      <a href="?q={{ filters.q }}&card_code={{ filters.card_code }}&status={{ filters.status }}&account_status={{ filters.account_status }}&page_size={{ pagination.page_size }}&page={{ pagination.prev_page }}">上一页</a>
+      <a href="?q={{ filters.q }}&card_code={{ filters.card_code }}&product_id={{ filters.product_id }}&status={{ filters.status }}&account_status={{ filters.account_status }}&page_size={{ pagination.page_size }}&page={{ pagination.prev_page }}">上一页</a>
       {% else %}
       <span>上一页</span>
       {% endif %}
       {% if pagination.has_next %}
-      <a href="?q={{ filters.q }}&card_code={{ filters.card_code }}&status={{ filters.status }}&account_status={{ filters.account_status }}&page_size={{ pagination.page_size }}&page={{ pagination.next_page }}">下一页</a>
+      <a href="?q={{ filters.q }}&card_code={{ filters.card_code }}&product_id={{ filters.product_id }}&status={{ filters.status }}&account_status={{ filters.account_status }}&page_size={{ pagination.page_size }}&page={{ pagination.next_page }}">下一页</a>
       {% else %}
       <span>下一页</span>
       {% endif %}
