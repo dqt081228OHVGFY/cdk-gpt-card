@@ -154,7 +154,7 @@ function shouldShowRouteLoadingForLink(link) {
 function shouldShowRouteLoadingForForm(form, submitter) {
   if (!form || form.dataset.noRouteProgress === "true") return false;
   if (submitter?.matches("[data-confirm-card-action]") && submitter.dataset.confirmed !== "true") return false;
-  if (submitter?.matches("[data-status-update], [data-account-check], [data-card-download], [data-file-download]")) return false;
+  if (submitter?.matches("[data-status-update], [data-card-download], [data-file-download]")) return false;
 
   const method = ((submitter?.getAttribute("formmethod") || form.method || "get")).toLowerCase();
   if (method === "dialog") return false;
@@ -614,30 +614,6 @@ async function submitStatusUpdate(form, submitter) {
   }
 }
 
-async function submitAccountStatusCheck(form, submitter) {
-  const action = submitter?.getAttribute("formaction") || form.action;
-  const formData = new FormData(form);
-  submitter.disabled = true;
-
-  try {
-    const response = await fetch(action, {
-      method: "POST",
-      body: formData,
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "X-Requested-With": "fetch",
-      },
-    });
-    const data = await readAdminJson(response, "账号状态检测失败");
-    showToast(data.message || "账号状态已检测", "success");
-    window.setTimeout(() => reloadWithAdminExit(160), 650);
-  } catch (error) {
-    showRequestError(error, "账号状态检测失败");
-    submitter.disabled = false;
-  }
-}
-
 document.querySelectorAll("[data-bulk-form]").forEach((form) => {
   form.addEventListener("submit", (event) => {
     const submitter = event.submitter || document.activeElement;
@@ -660,11 +636,6 @@ document.querySelectorAll("[data-bulk-form]").forEach((form) => {
     if (submitter?.matches("[data-status-update]")) {
       event.preventDefault();
       submitStatusUpdate(form, submitter);
-      return;
-    }
-    if (submitter?.matches("[data-account-check]")) {
-      event.preventDefault();
-      submitAccountStatusCheck(form, submitter);
       return;
     }
     if (!submitter?.matches("[data-card-download], [data-file-download]")) return;
@@ -1388,6 +1359,29 @@ document.querySelectorAll("[data-user-toggle]").forEach((button) => {
 
     const form = button.closest("form");
     const label = button.querySelector("b");
+
+    // Optimistic flip: respond to the click on the same frame instead of after
+    // the network round-trip. The slide/squash used to fire only once fetch()
+    // resolved, so the thumb sat frozen (button disabled) and then jumped —
+    // which read as jank + "no transition". Now the slide plays on click and we
+    // reconcile with (or roll back to) the server's authoritative state.
+    const wasOn = button.classList.contains("on");
+    const nextOn = !wasOn;
+    const applyVisual = (on) => {
+      button.classList.toggle("on", on);
+      button.classList.toggle("off", !on);
+    };
+    const pulseThumb = () => {
+      const thumb = button.querySelector(".switch-thumb");
+      if (!thumb) return;
+      thumb.classList.remove("is-sliding");
+      void thumb.offsetWidth;
+      thumb.classList.add("is-sliding");
+      window.setTimeout(() => thumb.classList.remove("is-sliding"), 360);
+    };
+
+    applyVisual(nextOn);
+    pulseThumb();
     button.disabled = true;
 
     try {
@@ -1401,14 +1395,20 @@ document.querySelectorAll("[data-user-toggle]").forEach((button) => {
       });
       const data = await readAdminJson(response, "切换失败");
 
-      button.classList.toggle("on", data.is_active);
-      button.classList.toggle("off", !data.is_active);
+      // Reconcile: only re-slide if the server disagrees with the optimistic state.
+      if (data.is_active !== nextOn) {
+        applyVisual(data.is_active);
+        pulseThumb();
+      }
       label.textContent = data.label;
       const row = button.closest("tr");
       const updatedAt = row?.querySelector("[data-updated-at]");
       if (updatedAt && data.updated_at) updatedAt.textContent = data.updated_at;
       showToast(`账号 ${data.username} 已${data.label}`, "success");
     } catch (error) {
+      // Roll back the optimistic flip on failure.
+      applyVisual(wasOn);
+      pulseThumb();
       showRequestError(error, "切换失败");
     } finally {
       button.disabled = false;

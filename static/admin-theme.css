@@ -1,23 +1,27 @@
 body.admin-surface {
-  --bg: #f4f5f1;
+  /* Unified with the public portal: same ink/zinc palette, same emerald accent,
+     same soft shadow scale and Inter type. Admin no longer runs its own lime +
+     grid-paper theme — both surfaces now read one design language. */
+  --bg: #f4f4f5;
   --panel: #ffffff;
-  --panel-soft: #ffffff;
-  --line: #dfe2dc;
-  --line-strong: #18181b;
+  --panel-soft: #fafafa;
+  --line: rgba(15, 23, 42, 0.08);
+  --line-strong: rgba(15, 23, 42, 0.14);
   --text: #18181b;
   --muted: #71717a;
-  --green: #d9ff62;
-  --green-soft: #b7ec66;
-  --danger: #dc4f4f;
-  --ok: #16835f;
-  --shadow: 0 18px 48px rgba(24, 24, 27, 0.08);
+  --green: #16805b;
+  --green-soft: #1f9e73;
+  --green-tint: #e6f7ef;
+  --danger: #b42318;
+  --ok: #16805b;
+  --shadow: 0 32px 90px rgba(15, 23, 42, 0.12), 0 6px 18px rgba(15, 23, 42, 0.06);
   color: var(--text);
-  font-family: "Aptos", "Segoe UI Variable", "Microsoft YaHei", sans-serif;
+  font-family: Inter, "Segoe UI", Arial, "Microsoft YaHei", sans-serif;
   background-color: var(--bg);
   background-image:
-    linear-gradient(rgba(24, 24, 27, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(24, 24, 27, 0.025) 1px, transparent 1px);
-  background-size: 28px 28px;
+    radial-gradient(circle at 12% -8%, rgba(22, 128, 91, 0.05), transparent 42%),
+    radial-gradient(circle at 92% 0%, rgba(47, 102, 223, 0.045), transparent 40%);
+  background-attachment: fixed;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -76,15 +80,15 @@ body.admin-surface *::-webkit-scrollbar-thumb {
   flex: 0 0 40px;
   display: block;
   border: 1px solid #18181b;
-  border-radius: 7px;
+  border-radius: 10px;
   background: #18181b;
-  box-shadow: 5px 5px 0 var(--green);
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease;
+  box-shadow: 0 10px 24px rgba(22, 128, 91, 0.22);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease;
 }
 
 .admin-surface .admin-title:hover .admin-brand-mark {
-  box-shadow: 3px 3px 0 var(--green);
-  transform: translate(2px, 2px);
+  box-shadow: 0 16px 34px rgba(22, 128, 91, 0.3);
+  transform: translateY(-2px);
 }
 
 .admin-surface .admin-brand-mark i {
@@ -189,13 +193,13 @@ body.admin-surface *::-webkit-scrollbar-thumb {
   height: 5px;
   border-radius: 50%;
   background: var(--green);
-  box-shadow: 0 0 0 4px rgba(217, 255, 98, 0.16);
+  box-shadow: 0 0 0 4px rgba(22, 128, 91, 0.16);
   content: "";
   animation: admin-status-pulse 2.2s ease-in-out infinite;
 }
 
 .admin-surface .nav-link.active span {
-  color: #18181b;
+  color: #ffffff;
   border-color: var(--green);
   background: var(--green);
 }
@@ -215,9 +219,9 @@ body.admin-surface *::-webkit-scrollbar-thumb {
   height: 68px;
   margin: 0 -28px;
   padding: 0 28px;
-  border-bottom: 1px solid rgba(216, 219, 213, 0.9);
+  border-bottom: 1px solid var(--line);
   color: var(--muted);
-  background: #f4f5f1;
+  background: var(--bg);
   view-transition-name: admin-topbar;
 }
 
@@ -225,7 +229,11 @@ body.admin-surface *::-webkit-scrollbar-thumb {
   min-width: 0;
   min-height: max-content;
   padding-bottom: 20px;
-  animation: admin-content-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* backwards (not both): the entrance still plays with no first-frame flash,
+     but no identity transform lingers at rest — otherwise the frame would form a
+     containing block and trap the position:fixed drawer inside it (the phantom
+     white panel + broken slide reported on 管理员管理). */
+  animation: admin-content-in 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   view-transition-name: admin-content;
 }
 
@@ -292,7 +300,7 @@ body.admin-surface.is-route-loading .admin-main {
   min-width: 82px;
   height: 34px;
   padding: 0 13px;
-  border: 1px solid #d4d7d1;
+  border: 1px solid #e4e4e7;
   border-radius: 6px;
   color: #3f3f46;
   background: #ffffff;
@@ -310,7 +318,7 @@ body.admin-surface.is-route-loading .admin-main {
 .admin-surface .page-heading {
   margin: 24px 0 20px;
   padding-right: 0;
-  animation: admin-content-in 380ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: admin-content-in 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .admin-surface .page-heading h1 {
@@ -353,7 +361,7 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .control-stats {
   gap: 10px;
-  animation: admin-content-in 400ms 130ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: admin-content-in 320ms 40ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .admin-surface .control-stats .stat-card {
@@ -367,7 +375,7 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .control-stats .stat-card:hover {
-  border-color: #bfc3bb;
+  border-color: #d4d4d8;
   box-shadow: 0 13px 28px rgba(24, 24, 27, 0.08);
   transform: translateY(-3px);
 }
@@ -387,14 +395,14 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .control-stats .stat-card:nth-child(2) i { background: #18181b; }
-.admin-surface .control-stats .stat-card:nth-child(3) i { background: #4b8def; }
+.admin-surface .control-stats .stat-card:nth-child(3) i { background: #2f66df; }
 .admin-surface .control-stats .stat-card:nth-child(4) i { background: #ff7f66; }
 .admin-surface .control-stats .stat-card:nth-child(5) i { background: #19a974; }
 .admin-surface .control-stats .stat-card:nth-child(6) i { background: #f5c451; }
 
 .admin-surface .dashboard-band {
   gap: 12px;
-  animation: admin-content-in 420ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: admin-content-in 340ms 80ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .admin-surface .comparison-block,
@@ -429,9 +437,7 @@ body.admin-surface.is-route-loading .admin-main {
 .admin-surface .tool-panel,
 .admin-surface .filters,
 .admin-surface .table-wrap,
-.admin-surface .upload-card,
-.admin-surface .drawer,
-.admin-surface .confirm-dialog {
+.admin-surface .upload-card {
   border-radius: 7px;
 }
 
@@ -459,7 +465,7 @@ body.admin-surface.is-route-loading .admin-main {
 .admin-surface .upload-panel,
 .admin-surface .import-mode-switch,
 .admin-surface .pagination {
-  animation: admin-content-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: admin-content-in 240ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .admin-surface input,
@@ -533,15 +539,15 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .secondary-action {
-  color: #18181b;
-  border: 1px solid #bedc62;
+  color: #ffffff;
+  border: 1px solid var(--green);
   background: var(--green);
 }
 
 .admin-surface .ghost-action,
 .admin-surface .drawer-close {
   color: #3f3f46;
-  border-color: #d4d7d1;
+  border-color: #e4e4e7;
   background: #ffffff;
 }
 
@@ -570,7 +576,7 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .create-actions {
-  border-color: #dfe2dc;
+  border-color: #e4e4e7;
 }
 
 .admin-surface .table-wrap {
@@ -596,7 +602,12 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface thead th {
   color: #64646d;
-  background: #f1f3ee;
+  background: #f4f4f5;
+  /* The base `thead th` carries backdrop-filter: blur(10px), but this header is
+     fully opaque (#f4f4f5), so the blur is invisible yet still forces a full
+     GPU blur pass on every scroll frame — pure jank on long CDK/user tables.
+     Drop it here; nothing visual changes, scrolling stops stuttering. */
+  backdrop-filter: none;
 }
 
 .admin-surface tbody tr {
@@ -604,7 +615,7 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface tbody tr:hover {
-  background: #f8fce9;
+  background: #f3faf7;
 }
 
 .admin-surface input[type="checkbox"] {
@@ -649,13 +660,13 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .copy-button {
   color: #3f3f46;
-  border-color: #d4d7d1;
+  border-color: #e4e4e7;
   background: #ffffff;
 }
 
 .admin-surface .copy-button:hover {
-  color: #18181b;
-  border-color: #bedc62;
+  color: #ffffff;
+  border-color: var(--green);
   background: var(--green);
 }
 
@@ -676,7 +687,7 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .status {
   border-radius: 999px;
-  background: #f4f5f1;
+  background: #f4f4f5;
 }
 
 .admin-surface .status.available,
@@ -687,20 +698,18 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .status.pending {
-  color: #4c6410;
-  border-color: #bfd764;
-  background: #f4fbd8;
+  color: #1e4fb0;
+  border-color: #b9cef5;
+  background: #eef3fd;
 }
 
-.admin-surface .status.sold,
-.admin-surface .status.account-available {
+.admin-surface .status.sold {
   color: #126448;
   border-color: #78c4a5;
   background: #e9f8f1;
 }
 
-.admin-surface .status.voided,
-.admin-surface .status.account-unavailable {
+.admin-surface .status.voided {
   color: #a33d3d;
   border-color: #e2a09c;
   background: #fff0ee;
@@ -714,18 +723,18 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .format-badge {
   color: #52525b;
-  border-color: #d4d7d1;
+  border-color: #e4e4e7;
   background: #f7f8f5;
 }
 
-.admin-surface .format-badge.cpa { color: #51660e; border-color: #bfd764; background: #f4fbd8; }
+.admin-surface .format-badge.cpa { color: #1e4fb0; border-color: #b9cef5; background: #eef3fd; }
 .admin-surface .format-badge.sub { color: #126448; border-color: #78c4a5; background: #e9f8f1; }
 .admin-surface .format-badge.raw { color: #9b4d28; border-color: #e6aa83; background: #fff1e9; }
 .admin-surface .format-badge.unknown { color: #9b3f3f; border-color: #e1a09e; background: #fff0ee; }
 
 .admin-surface .import-mode-switch {
   padding: 4px;
-  border-color: #dfe2dc;
+  border-color: #e4e4e7;
   border-radius: 7px;
   background: #eceee9;
 }
@@ -762,13 +771,13 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .upload-limit {
-  border-color: #cddd92;
+  border-color: #e4e4e7;
   border-radius: 6px;
-  background: #f6fbdc;
+  background: #f4f4f5;
 }
 
 .admin-surface .upload-limit strong {
-  color: #445b0b;
+  color: #3f3f46;
 }
 
 .admin-surface .upload-file-box {
@@ -807,7 +816,7 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .upload-file-list li {
-  border-color: #dfe2dc;
+  border-color: #e4e4e7;
   border-radius: 5px;
   color: #27272a;
   background: #f7f8f5;
@@ -815,7 +824,7 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .profile-identity,
 .admin-surface .one-code-rule {
-  border-color: #dfe2dc;
+  border-color: #e4e4e7;
 }
 
 .admin-surface .profile-identity strong,
@@ -824,7 +833,7 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .one-code-rule span {
-  color: #526a10;
+  color: #16805b;
 }
 
 .admin-surface .field-help {
@@ -837,7 +846,7 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .usage-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-color: #dfe2dc;
+  border-color: #e4e4e7;
   border-radius: 6px;
   background: #f7f8f5;
 }
@@ -850,32 +859,14 @@ body.admin-surface.is-route-loading .admin-main {
   font-weight: 800;
 }
 
-.admin-surface .drawer-backdrop,
-.admin-surface .confirm-backdrop {
-  background: rgba(24, 24, 27, 0.34);
-}
-
-.admin-surface .drawer,
-.admin-surface .confirm-dialog {
-  color: #18181b;
-  border-color: #d6d9d3;
-  background: #ffffff;
-  box-shadow: 0 28px 90px rgba(24, 24, 27, 0.22);
-}
-
-.admin-surface .drawer {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.admin-surface .liveness-grid {
+.admin-surface .admin-panel-grid {
   display: grid;
   grid-template-columns: minmax(260px, 0.95fr) minmax(280px, 1.05fr) minmax(240px, 0.8fr);
   gap: 16px;
   margin-bottom: 20px;
 }
 
-.admin-surface .liveness-panel {
+.admin-surface .admin-form-panel {
   position: relative;
   overflow: hidden;
   min-height: 210px;
@@ -887,7 +878,7 @@ body.admin-surface.is-route-loading .admin-main {
   transition: border-color 180ms ease, box-shadow 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.admin-surface .liveness-panel::before {
+.admin-surface .admin-form-panel::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
@@ -896,26 +887,26 @@ body.admin-surface.is-route-loading .admin-main {
   opacity: 0.86;
 }
 
-.admin-surface .liveness-panel:hover {
-  border-color: #c7cbc3;
+.admin-surface .admin-form-panel:hover {
+  border-color: #d4d4d8;
   box-shadow: 0 20px 55px rgba(24, 24, 27, 0.1);
   transform: translateY(-2px);
 }
 
-.admin-surface .liveness-panel .field {
+.admin-surface .admin-form-panel .field {
   margin-bottom: 13px;
 }
 
-.admin-surface .liveness-panel .muted-text {
+.admin-surface .admin-form-panel .muted-text {
   display: block;
   margin: 0 0 14px;
 }
 
-.admin-surface .liveness-panel .system-select {
+.admin-surface .admin-form-panel .system-select {
   width: 100%;
 }
 
-.admin-surface .liveness-panel .system-select-button {
+.admin-surface .admin-form-panel .system-select-button {
   min-height: 44px;
   border-radius: 6px;
   background: #f8f9f6;
@@ -975,28 +966,27 @@ body.admin-surface.is-route-loading .admin-main {
   line-height: 1.5;
 }
 
-.admin-surface .liveness-panel .primary-action,
-.admin-surface .liveness-panel .secondary-action {
+.admin-surface .admin-form-panel .primary-action,
+.admin-surface .admin-form-panel .secondary-action {
   min-height: 42px;
   padding: 0 16px;
   font-weight: 850;
   transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
-.admin-surface .liveness-panel .primary-action:hover:not(:disabled),
-.admin-surface .liveness-panel .secondary-action:hover:not(:disabled) {
+.admin-surface .admin-form-panel .primary-action:hover:not(:disabled),
+.admin-surface .admin-form-panel .secondary-action:hover:not(:disabled) {
   box-shadow: 0 8px 20px rgba(24, 24, 27, 0.12);
   transform: translateY(-1px);
 }
 
-.admin-surface .liveness-panel .primary-action:focus-visible,
-.admin-surface .liveness-panel .secondary-action:focus-visible,
-.admin-surface .liveness-table button:focus-visible {
+.admin-surface .admin-form-panel .primary-action:focus-visible,
+.admin-surface .admin-form-panel .secondary-action:focus-visible {
   outline: 3px solid rgba(24, 24, 27, 0.14);
   outline-offset: 2px;
 }
 
-.admin-surface .liveness-panel button:disabled {
+.admin-surface .admin-form-panel button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
   transform: none;
@@ -1004,7 +994,7 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .monitor-status-panel {
   background:
-    radial-gradient(circle at 88% 8%, rgba(217, 255, 98, 0.38), transparent 34%),
+    radial-gradient(circle at 88% 8%, rgba(22, 128, 91, 0.14), transparent 40%),
     linear-gradient(135deg, #ffffff, #fbfcf8);
 }
 
@@ -1071,42 +1061,6 @@ body.admin-surface.is-route-loading .admin-main {
   font-family: "SFMono-Regular", Consolas, monospace;
 }
 
-.admin-surface .status.account-available,
-.admin-surface tr.normal .status.account-available {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.admin-surface .status.account-unavailable,
-.admin-surface tr.problem .status.account-unavailable {
-  color: #991b1b;
-  background: #fee2e2;
-}
-
-.admin-surface .status.account-unchecked {
-  color: #854d0e;
-  background: #fef3c7;
-}
-
-.admin-surface .liveness-table tbody tr.normal {
-  background: linear-gradient(90deg, rgba(217, 255, 98, 0.1), transparent 36%);
-}
-
-.admin-surface .liveness-table tbody tr.problem {
-  background: linear-gradient(90deg, rgba(220, 79, 79, 0.09), transparent 36%);
-}
-
-.admin-surface .liveness-error-label {
-  max-width: 260px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  color: #52525b;
-}
-
-.admin-surface .liveness-table table {
-  min-width: 980px;
-}
-
 .admin-surface .readonly-actions {
   display: flex;
   align-items: center;
@@ -1134,7 +1088,7 @@ body.admin-surface.is-route-loading .admin-main {
   border-radius: 9px;
   background:
     linear-gradient(#ffffff, #ffffff) padding-box,
-    linear-gradient(135deg, rgba(24, 24, 27, 0.24), rgba(217, 255, 98, 0.72)) border-box;
+    linear-gradient(135deg, rgba(24, 24, 27, 0.24), rgba(22, 128, 91, 0.5)) border-box;
   box-shadow: var(--shadow);
   margin: 4px 0 20px;
   padding: 18px;
@@ -1188,46 +1142,31 @@ body.admin-surface.is-route-loading .admin-main {
   padding: 34px;
 }
 
-.admin-surface .drawer-header,
 .admin-surface .usage-summary,
 .admin-surface .usage-item {
   border-color: #e1e3de;
 }
 
-.admin-surface .drawer-header p,
-.admin-surface .confirm-dialog p,
 .admin-surface .usage-item span,
 .admin-surface .usage-item em {
   color: #71717a;
 }
 
-.admin-surface .confirm-close {
-  color: #3f3f46;
-  border-color: #d4d7d1;
-  background: #ffffff;
-}
-
-.admin-surface .confirm-close:hover {
-  color: #ffffff;
-  border-color: #18181b;
-  background: #18181b;
-}
-
 .admin-surface .toggle-switch {
   color: #52525b;
-  border-color: #d4d7d1;
-  background: #f4f5f1;
+  border-color: #e4e4e7;
+  background: #f4f4f5;
 }
 
 .admin-surface .toggle-switch.on {
-  color: #32420b;
-  border-color: #bdd36a;
-  background: #f3f9dc;
+  color: #0f5c40;
+  border-color: #a7d9c5;
+  background: #e6f7ef;
 }
 
 .admin-surface .switch-track {
-  border-color: #d4d7d1;
-  background: #f8dedd;
+  border-color: #e4e4e7;
+  background: #e4e4e7;
 }
 
 .admin-surface .switch-thumb {
@@ -1235,12 +1174,12 @@ body.admin-surface.is-route-loading .admin-main {
 }
 
 .admin-surface .toggle-switch.on .switch-track {
-  border-color: #bdd36a;
-  background: #e5f1b9;
+  border-color: #a7d9c5;
+  background: #cdeee0;
 }
 
 .admin-surface .toggle-switch.on .switch-thumb {
-  background: #6b8a16;
+  background: #16805b;
   box-shadow: none;
 }
 
@@ -1250,7 +1189,7 @@ body.admin-surface.is-route-loading .admin-main {
 
 .admin-surface .pager-links a,
 .admin-surface .pager-links span {
-  border-color: #d4d7d1;
+  border-color: #e4e4e7;
   border-radius: 6px;
 }
 
@@ -1337,91 +1276,102 @@ body.admin-surface.is-api-loading .route-progress span {
   50% { transform: scale(0.72); opacity: 0.6; }
 }
 
-/* Batch CDK result: a focused, celebratory checkpoint after a successful create. */
-.admin-surface .card-create-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: rgba(24, 24, 27, 0.4);
-  backdrop-filter: blur(4px) saturate(0.86);
-  opacity: 0;
-  transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.admin-surface .card-create-backdrop.open {
-  opacity: 1;
-}
-
+/* Batch CDK result modal. Surface, scale and motion come from the shared
+   --overlay-* tokens in styles.css; only the wide header/body/footer layout is
+   local. The success accent is expressed through --overlay-accent, so the panel
+   stays white like every other dialog. */
 .admin-surface .card-create-modal {
+  --overlay-accent: #16805b;
+  --overlay-accent-tint: #e6f7ef;
   position: fixed;
   inset: 50% auto auto 50%;
   z-index: 81;
-  width: min(640px, calc(100vw - 32px));
+  width: var(--overlay-width-wide);
   max-height: min(720px, calc(100dvh - 48px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #d8ddd4;
-  border-radius: 16px;
-  color: #18181b;
-  background: #ffffff;
-  box-shadow: 0 34px 110px rgba(24, 24, 27, 0.25), 0 5px 20px rgba(24, 24, 27, 0.08);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius);
+  color: var(--overlay-ink);
+  background: var(--overlay-surface);
+  box-shadow: var(--overlay-shadow);
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, calc(-50% + 22px)) scale(0.95) rotateX(3deg);
-  transform-origin: 50% 80%;
-  transition: opacity 300ms cubic-bezier(0.22, 1, 0.36, 1), transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translate(-50%, calc(-50% + 22px)) scale(0.94);
+  transform-origin: 50% 70%;
+  transition: opacity var(--overlay-exit) ease, transform var(--overlay-exit) var(--overlay-ease-exit);
   will-change: opacity, transform;
 }
 
 .admin-surface .card-create-modal.open {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(-50%, -50%) scale(1) rotateX(0deg);
+  transform: translate(-50%, -50%) scale(1);
+  animation: overlay-panel-in var(--overlay-enter) var(--overlay-ease) both;
+}
+
+/* Thin accent line, same gesture as .site-notice / .confirm-dialog. */
+.admin-surface .card-create-modal::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--overlay-accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+.admin-surface .card-create-modal.open::before {
+  animation: overlay-accent-sweep 520ms var(--overlay-ease) 60ms both;
 }
 
 .admin-surface .card-create-modal-header {
   position: relative;
   display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) 36px;
+  grid-template-columns: var(--overlay-mark) minmax(0, 1fr) 36px;
   align-items: center;
-  gap: 16px;
-  padding: 26px 28px 24px;
-  border-bottom: 1px solid #e4e7e1;
+  gap: var(--overlay-gap);
+  padding: calc(var(--overlay-pad) - 4px) var(--overlay-pad);
+  border-bottom: 1px solid var(--overlay-border);
+}
+
+.admin-surface .card-create-modal.open .card-create-modal-header {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) var(--overlay-lead) both;
 }
 
 .admin-surface .card-create-success-mark {
   position: relative;
-  width: 50px;
-  height: 50px;
+  width: var(--overlay-mark);
+  height: var(--overlay-mark);
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #16805b;
-  background: #dcf9e8;
-  box-shadow: inset 0 0 0 1px rgba(31, 173, 111, 0.16);
-  animation: card-create-mark-pop 620ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+  color: var(--overlay-accent);
+  background: var(--overlay-accent-tint);
+  box-shadow: inset 0 0 0 1px var(--overlay-border-strong);
 }
 
-.admin-surface .card-create-success-mark::before,
 .admin-surface .card-create-success-mark::after {
   content: "";
   position: absolute;
-  inset: -7px;
-  border: 1px solid rgba(31, 173, 111, 0.22);
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid currentColor;
   border-radius: inherit;
   opacity: 0;
-  animation: card-create-mark-ring 900ms ease-out 220ms both;
 }
 
-.admin-surface .card-create-success-mark::after {
-  inset: -14px;
-  border-color: rgba(31, 173, 111, 0.12);
-  animation-delay: 320ms;
+.admin-surface .card-create-modal.open .card-create-success-mark {
+  animation: overlay-mark-in 380ms var(--overlay-ease) var(--overlay-lead) both;
+}
+
+.admin-surface .card-create-modal.open .card-create-success-mark::after {
+  animation: overlay-mark-ring 900ms ease-out 280ms 2 both;
 }
 
 .admin-surface .card-create-success-mark span {
-  font-size: 25px;
+  font-size: calc(var(--overlay-mark) * 0.5);
   font-weight: 900;
   line-height: 1;
 }
@@ -1433,23 +1383,24 @@ body.admin-surface.is-api-loading .route-progress span {
 .admin-surface .card-create-eyebrow {
   display: block;
   margin-bottom: 4px;
-  color: #16805b;
-  font-size: 10px;
+  color: var(--overlay-accent);
+  font-size: var(--overlay-kicker);
   font-weight: 850;
   letter-spacing: 0;
 }
 
 .admin-surface .card-create-heading h2 {
   margin: 0;
-  color: #18181b;
-  font-size: 23px;
-  line-height: 1.15;
+  color: var(--overlay-ink);
+  font-size: var(--overlay-title);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
 }
 
 .admin-surface .card-create-heading p {
   margin: 5px 0 0;
-  color: #71717a;
-  font-size: 14px;
+  color: var(--overlay-ink-muted);
+  font-size: var(--overlay-body);
 }
 
 .admin-surface .card-create-close {
@@ -1458,11 +1409,12 @@ body.admin-surface.is-api-loading .route-progress span {
   display: grid;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 8px;
-  color: #8b929d;
+  border-radius: var(--overlay-radius-sm);
+  color: var(--overlay-ink-muted);
   background: transparent;
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease,
+    transform 220ms var(--overlay-ease-soft);
 }
 
 .admin-surface .card-create-close span {
@@ -1472,10 +1424,14 @@ body.admin-surface.is-api-loading .route-progress span {
 }
 
 .admin-surface .card-create-close:hover {
-  color: #18181b;
-  border-color: #d7dcd4;
-  background: #f2f4ef;
-  transform: rotate(4deg);
+  color: var(--overlay-ink);
+  border-color: var(--overlay-border-strong);
+  background: var(--overlay-surface-soft);
+  transform: rotate(90deg);
+}
+
+.admin-surface .card-create-close:active {
+  transform: rotate(90deg) scale(0.92);
 }
 
 .admin-surface .card-create-close:focus-visible,
@@ -1488,17 +1444,22 @@ body.admin-surface.is-api-loading .route-progress span {
 
 .admin-surface .card-create-modal-body {
   min-height: 0;
-  padding: 24px 28px 26px;
+  padding: calc(var(--overlay-pad) - 6px) var(--overlay-pad);
   overflow: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #cbd2c7 transparent;
 }
 
+.admin-surface .card-create-modal.open .card-create-modal-body {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step)) both;
+}
+
 .admin-surface .card-create-list-wrap {
-  border: 1px solid #dfe4dc;
-  border-radius: 8px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius-sm);
   overflow: hidden;
-  background: #fafbf9;
+  background: var(--overlay-surface-soft);
 }
 
 .admin-surface .card-create-list-label {
@@ -1508,14 +1469,14 @@ body.admin-surface.is-api-loading .route-progress span {
   gap: 14px;
   min-height: 45px;
   padding: 0 15px;
-  border-bottom: 1px solid #e5e9e2;
-  color: #64646d;
+  border-bottom: 1px solid var(--overlay-border);
+  color: var(--overlay-ink-muted);
   font-size: 12px;
   font-weight: 750;
 }
 
 .admin-surface .card-create-list-label span:last-child {
-  color: #16805b;
+  color: var(--overlay-accent);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 11px;
 }
@@ -1526,6 +1487,7 @@ body.admin-surface.is-api-loading .route-progress span {
   max-height: 310px;
   padding: 12px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .admin-surface .card-create-item {
@@ -1534,12 +1496,9 @@ body.admin-surface.is-api-loading .route-progress span {
   align-items: center;
   gap: 12px;
   padding: 0 10px 0 14px;
-  border: 1px solid #e4e8e1;
-  border-radius: 7px;
-  background: #ffffff;
-  opacity: 0;
-  transform: translateY(8px);
-  animation: card-create-row-in 400ms cubic-bezier(0.22, 1, 0.36, 1) calc(170ms + var(--card-index, 0) * 34ms) both;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius-sm);
+  background: var(--overlay-surface);
 }
 
 .admin-surface .card-create-item-code {
@@ -1566,23 +1525,32 @@ body.admin-surface.is-api-loading .route-progress span {
   cursor: pointer;
   font-size: 11px;
   font-weight: 750;
-  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease,
+    transform 180ms var(--overlay-ease-soft);
 }
 
 .admin-surface .card-create-item-copy:hover {
-  color: #18181b;
-  border-color: #bedc62;
-  background: #eff9c9;
+  color: #16805b;
+  border-color: rgba(22, 128, 91, 0.32);
+  background: #e6f7ef;
   transform: translateY(-1px);
+}
+
+.admin-surface .card-create-item-copy:active {
+  transform: translateY(0) scale(0.96);
 }
 
 .admin-surface .card-create-modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  padding: 18px 28px 22px;
-  border-top: 1px solid #e4e7e1;
-  background: #ffffff;
+  padding: calc(var(--overlay-pad) - 8px) var(--overlay-pad) calc(var(--overlay-pad) - 4px);
+  border-top: 1px solid var(--overlay-border);
+  background: var(--overlay-surface);
+}
+
+.admin-surface .card-create-modal.open .card-create-modal-footer {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 2) both;
 }
 
 .admin-surface .card-create-copy,
@@ -1595,7 +1563,7 @@ body.admin-surface.is-api-loading .route-progress span {
   gap: 9px;
   padding: 0 17px;
   font-weight: 800;
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background 180ms ease;
+  transition: transform 180ms var(--overlay-ease-soft), box-shadow 180ms ease, background 180ms ease;
 }
 
 .admin-surface .card-create-copy:hover,
@@ -1656,100 +1624,9 @@ body.admin-surface.is-api-loading .route-progress span {
   background: #16805b;
 }
 
-@keyframes card-create-mark-pop {
-  0% { opacity: 0; transform: scale(0.48) rotate(-14deg); }
-  62% { opacity: 1; transform: scale(1.12) rotate(4deg); }
-  100% { opacity: 1; transform: scale(1) rotate(0); }
-}
-
-@keyframes card-create-mark-ring {
-  0% { opacity: 0.8; transform: scale(0.55); }
-  100% { opacity: 0; transform: scale(1.18); }
-}
-
 @keyframes card-create-row-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-/* Cleaner CDK generation result modal. */
-.admin-surface .card-create-backdrop {
-  background: rgba(24, 24, 27, 0.28);
-  backdrop-filter: blur(2px);
-}
-
-.admin-surface .card-create-modal {
-  width: min(720px, calc(100vw - 32px));
-  border-radius: 10px;
-  box-shadow: 0 22px 70px rgba(24, 24, 27, 0.2), 0 4px 14px rgba(24, 24, 27, 0.08);
-}
-
-.admin-surface .card-create-modal-header {
-  grid-template-columns: 44px minmax(0, 1fr) 34px;
-  padding: 20px 22px;
-}
-
-.admin-surface .card-create-success-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: #edf9f3;
-  animation-duration: 360ms;
-}
-
-.admin-surface .card-create-success-mark::before,
-.admin-surface .card-create-success-mark::after {
-  display: none;
-}
-
-.admin-surface .card-create-heading h2 {
-  font-size: 20px;
-}
-
-.admin-surface .card-create-eyebrow {
-  color: #5f7f1a;
-  font-size: 11px;
-}
-
-.admin-surface .card-create-modal-body {
-  padding: 18px 22px;
-}
-
-.admin-surface .card-create-list-wrap,
-.admin-surface .card-create-item {
-  border-radius: 8px;
-}
-
-.admin-surface .card-create-item {
-  animation-duration: 240ms;
-  animation-delay: calc(90ms + var(--card-index, 0) * 18ms);
-}
-
-.admin-surface .card-create-modal-footer {
-  padding: 16px 22px 20px;
-}
-
-.admin-surface .confirm-kicker {
-  display: block;
-  margin-bottom: 6px;
-  color: #8a6b00;
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
-.admin-surface .confirm-message-box {
-  margin: 14px 0 18px;
-  padding: 14px 16px;
-  border: 1px solid #ead9a6;
-  border-radius: 8px;
-  background: #fff9e7;
-}
-
-.admin-surface .confirm-message-box p {
-  margin: 0;
-  color: #3f3f46;
-  line-height: 1.65;
 }
 
 @media (max-width: 1180px) {
@@ -1757,7 +1634,7 @@ body.admin-surface.is-api-loading .route-progress span {
     grid-template-columns: repeat(3, minmax(140px, 1fr));
   }
 
-  .admin-surface .liveness-grid {
+  .admin-surface .admin-panel-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1842,7 +1719,7 @@ body.admin-surface.is-api-loading .route-progress span {
   .admin-surface .files-filters,
   .admin-surface .cards-filters,
   .admin-surface .tool-panel,
-  .admin-surface .liveness-grid {
+  .admin-surface .admin-panel-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -1852,33 +1729,14 @@ body.admin-surface.is-api-loading .route-progress span {
 }
 
 @media (max-width: 620px) {
+  /* Geometry comes from the shared --overlay-* breakpoints in styles.css;
+     only the stacked list layout is specific to this modal. */
   .admin-surface .card-create-modal {
-    width: calc(100vw - 20px);
     max-height: calc(100dvh - 20px);
-    border-radius: 12px;
-  }
-
-  .admin-surface .card-create-modal-header {
-    grid-template-columns: 44px minmax(0, 1fr) 34px;
-    gap: 12px;
-    padding: 20px 18px 18px;
-  }
-
-  .admin-surface .card-create-success-mark {
-    width: 44px;
-    height: 44px;
-  }
-
-  .admin-surface .card-create-heading h2 {
-    font-size: 20px;
   }
 
   .admin-surface .card-create-eyebrow {
     display: none;
-  }
-
-  .admin-surface .card-create-modal-body {
-    padding: 16px 14px 18px;
   }
 
   .admin-surface .card-create-list {
@@ -1904,10 +1762,6 @@ body.admin-surface.is-api-loading .route-progress span {
 
   .admin-surface .card-create-item-copy {
     align-self: flex-end;
-  }
-
-  .admin-surface .card-create-modal-footer {
-    padding: 14px;
   }
 
   .admin-surface .card-create-copy,
@@ -1938,7 +1792,7 @@ body.admin-surface.is-api-loading .route-progress span {
   .admin-surface .files-filters,
   .admin-surface .cards-filters,
   .admin-surface .tool-panel,
-  .admin-surface .liveness-grid,
+  .admin-surface .admin-panel-grid,
   .admin-surface .upload-spec-grid {
     grid-template-columns: 1fr;
   }
@@ -2014,19 +1868,37 @@ body.admin-surface.is-api-loading .route-progress span {
   .admin-surface .upload-panel,
   .admin-surface .import-mode-switch,
   .admin-surface .pagination,
-  .admin-surface .nav-link.active::after,
-  .admin-surface .card-create-backdrop,
-  .admin-surface .card-create-modal,
-  .admin-surface .card-create-success-mark,
-  .admin-surface .card-create-success-mark::before,
-  .admin-surface .card-create-success-mark::after,
-  .admin-surface .card-create-item {
+  .admin-surface .nav-link.active::after {
     animation: none !important;
     transition-duration: 1ms !important;
   }
+
+  /* Admin-only overlay children. The shared surfaces themselves are already
+     handled by the single reduced-motion block in styles.css. */
+  .admin-surface .card-create-modal.open::before,
+  .admin-surface .card-create-modal.open .card-create-modal-header,
+  .admin-surface .card-create-modal.open .card-create-modal-body,
+  .admin-surface .card-create-modal.open .card-create-modal-footer,
+  .admin-surface .card-create-modal.open .card-create-success-mark,
+  .admin-surface .card-create-modal.open .card-create-success-mark::after,
+  .admin-surface .card-create-close,
+  .admin-surface .card-create-item,
+  .admin-surface .card-create-item.motion-item {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+
+  .admin-surface .card-create-modal.open::before {
+    transform: scaleX(1);
+  }
+
+  .admin-surface .card-create-item {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-/* 2026-07-21 polish: language switch spacing, confirm modal, CDK generated modal */
+/* 2026-07-21 polish: language switch spacing and system select panel. */
 .admin-surface .language-switcher {
   top: 12px;
   left: 14px;
@@ -2067,156 +1939,6 @@ body.admin-surface.is-api-loading .route-progress span {
   scroll-margin-top: 8px;
 }
 
-.admin-surface .confirm-backdrop {
-  z-index: 170;
-  background:
-    radial-gradient(circle at 50% 36%, rgba(216, 255, 98, 0.12), transparent 32%),
-    rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(7px);
-}
-
-.admin-surface .confirm-dialog {
-  top: 50%;
-  z-index: 171;
-  width: min(470px, calc(100vw - 32px));
-  padding: 28px;
-  border: 1px solid #dfe4d7;
-  border-radius: 22px;
-  color: #18181b;
-  background:
-    linear-gradient(135deg, rgba(216, 255, 98, 0.2), transparent 34%),
-    #ffffff;
-  box-shadow: 0 34px 110px rgba(24, 24, 27, 0.24);
-}
-
-.admin-surface .confirm-dialog[data-tone="danger"] {
-  background:
-    linear-gradient(135deg, rgba(255, 107, 107, 0.14), transparent 34%),
-    #ffffff;
-}
-
-.admin-surface .confirm-dialog h2 {
-  color: #18181b;
-  font-size: 23px;
-  letter-spacing: -0.03em;
-}
-
-.admin-surface .confirm-kicker {
-  width: fit-content;
-  margin-bottom: 8px;
-  padding: 5px 8px;
-  border-radius: 999px;
-  color: #38530b;
-  background: rgba(216, 255, 98, 0.42);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-}
-
-.admin-surface .confirm-dialog[data-tone="danger"] .confirm-kicker {
-  color: #8f1d1d;
-  background: #ffe7e1;
-}
-
-.admin-surface .confirm-message-box {
-  margin: 16px 0 20px;
-  padding: 16px 17px;
-  border: 1px solid #e7dcc0;
-  border-radius: 14px;
-  background: #fffaf0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
-}
-
-.admin-surface .confirm-dialog[data-tone="danger"] .confirm-message-box {
-  border-color: #f0c7c0;
-  background: #fff6f4;
-}
-
-.admin-surface .confirm-message-box p,
-.admin-surface .confirm-dialog p {
-  margin: 0;
-  color: #3f3f46;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.admin-surface .confirm-actions {
-  gap: 12px;
-}
-
-.admin-surface .confirm-close {
-  top: 16px;
-  right: 16px;
-  border-color: #e1e5dd;
-  border-radius: 11px;
-  background: #ffffff;
-}
-
-.admin-surface .confirm-close:hover {
-  color: #18181b;
-  background: #d8ff62;
-}
-
-.admin-surface .card-create-modal {
-  width: min(760px, calc(100vw - 34px));
-  overflow: hidden;
-  border: 1px solid rgba(24, 24, 27, 0.12);
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at 12% -10%, rgba(216, 255, 98, 0.36), transparent 32%),
-    linear-gradient(180deg, #ffffff, #f8faf5);
-  box-shadow: 0 34px 120px rgba(24, 24, 27, 0.26);
-}
-
-.admin-surface .card-create-modal-header {
-  border-bottom: 1px solid #e4e7de;
-  background:
-    linear-gradient(135deg, rgba(24, 24, 27, 0.96), rgba(24, 24, 27, 0.9)),
-    #18181b;
-}
-
-.admin-surface .card-create-heading span,
-.admin-surface .card-create-eyebrow {
-  color: #d8ff62;
-  font-family: Consolas, "Courier New", monospace;
-  letter-spacing: 0.12em;
-}
-
-.admin-surface .card-create-heading h2 {
-  color: #ffffff;
-  font-size: 24px;
-  letter-spacing: -0.03em;
-}
-
-.admin-surface .card-create-heading p {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.admin-surface .card-create-success-mark {
-  color: #111827;
-  background: linear-gradient(135deg, #d8ff62, #71e1a2);
-  box-shadow: 0 14px 32px rgba(216, 255, 98, 0.22);
-}
-
-.admin-surface .card-create-close {
-  color: rgba(255, 255, 255, 0.78);
-  border-color: rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.admin-surface .card-create-close:hover {
-  color: #18181b;
-  background: #d8ff62;
-}
-
-.admin-surface .card-create-list-label {
-  color: #52525b;
-}
-
-.admin-surface .card-create-item {
-  border-radius: 12px;
-  background: #ffffff;
-}
-
 @media (max-width: 900px) {
   .admin-surface .language-switcher {
     top: 10px;
@@ -2228,7 +1950,7 @@ body.admin-surface.is-api-loading .route-progress span {
   }
 }
 
-/* 2026-07-21 exception motion pass: stronger movement, restrained color. */
+/* 2026-07-21 exception motion pass: admin route-leave transition. */
 body.admin-surface.is-admin-route-leaving .admin-content-frame {
   pointer-events: none;
   animation: admin-exception-route-out 150ms cubic-bezier(0.3, 0, 0.2, 1) both;
@@ -2240,103 +1962,9 @@ body.admin-surface.is-admin-route-leaving .admin-topbar {
   transition: opacity 180ms ease;
 }
 
-.admin-surface .confirm-backdrop {
-  z-index: 170;
-  background:
-    linear-gradient(90deg, rgba(24, 24, 27, 0.18), rgba(24, 24, 27, 0.08)),
-    rgba(9, 9, 11, 0.52);
-  backdrop-filter: none;
-  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.admin-surface .confirm-backdrop.open {
-  animation: admin-backdrop-in 240ms ease both;
-}
-
-.admin-surface .confirm-dialog {
-  z-index: 171;
-  width: min(470px, calc(100vw - 32px));
-  padding: 28px;
-  border: 1px solid #d4d4d8;
-  border-radius: 18px;
-  color: #18181b;
-  background: #ffffff;
-  box-shadow: 0 34px 110px rgba(24, 24, 27, 0.24);
-  opacity: 0;
-  transform: translate(-50%, calc(-50% + 18px)) scale(0.965);
-  transition:
-    opacity 210ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, transform;
-}
-
-.admin-surface .confirm-dialog.open {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-  animation: none;
-}
-
-.admin-surface .confirm-dialog[data-tone="danger"],
-.admin-surface .confirm-dialog[data-tone="danger"].open {
-  background: #ffffff;
-}
-
-.admin-surface .confirm-dialog[data-tone="danger"].open {
-  animation: none;
-}
-
-.admin-surface .confirm-kicker,
-.admin-surface .confirm-dialog[data-tone="danger"] .confirm-kicker {
-  color: #52525b;
-  background: #f4f4f5;
-}
-
-.admin-surface .confirm-message-box,
-.admin-surface .confirm-dialog[data-tone="danger"] .confirm-message-box {
-  border-color: #e4e4e7;
-  background: #fafafa;
-}
-
-.admin-surface .confirm-close:hover {
-  color: #ffffff;
-  background: #18181b;
-}
-
-.admin-surface .card-create-modal {
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 34px 120px rgba(24, 24, 27, 0.24);
-}
-
-.admin-surface .card-create-modal-header {
-  border-bottom-color: #27272a;
-  background: #18181b;
-}
-
-.admin-surface .card-create-heading span,
-.admin-surface .card-create-eyebrow {
-  color: #d4d4d8;
-}
-
-.admin-surface .card-create-success-mark {
-  color: #18181b;
-  background: #f4f4f5;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24), inset 0 0 0 1px #ffffff;
-}
-
-.admin-surface .card-create-close:hover {
-  color: #18181b;
-  background: #f4f4f5;
-}
-
 @keyframes admin-exception-route-out {
   0% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
   100% { opacity: 0; transform: translate3d(0, -6px, 0) scale(0.995); }
-}
-
-@keyframes admin-backdrop-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 /* 2026-07-22 admin motion performance pass. */
@@ -2350,14 +1978,8 @@ body.admin-surface.is-admin-route-leaving .admin-topbar {
   view-transition-name: none;
 }
 
-.admin-surface .card-create-backdrop {
-  backdrop-filter: none;
-}
-
-.admin-surface .card-create-modal {
-  transition-duration: 180ms, 240ms;
-}
-
+/* Long CDK lists: rows stay cheap to paint and only animate when admin.js
+   tags them with .motion-item. */
 .admin-surface .card-create-item {
   content-visibility: auto;
   contain-intrinsic-size: auto 46px;
@@ -2367,32 +1989,11 @@ body.admin-surface.is-admin-route-leaving .admin-topbar {
 }
 
 .admin-surface .card-create-item.motion-item {
-  animation: card-create-row-in 220ms cubic-bezier(0.22, 1, 0.36, 1) calc(70ms + var(--card-index, 0) * 14ms) both;
-}
-
-@keyframes admin-confirm-in {
-  0% { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.965); }
-  72% { opacity: 1; transform: translate(-50%, calc(-50% - 2px)) scale(1.006); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-@keyframes admin-confirm-danger-in {
-  0% { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.965); }
-  52% { opacity: 1; transform: translate(calc(-50% - 2px), -50%) scale(1.006); }
-  68% { transform: translate(calc(-50% + 2px), -50%) scale(1); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  animation: card-create-row-in 220ms var(--overlay-ease-soft) calc(70ms + var(--card-index, 0) * 14ms) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.admin-surface.is-admin-route-leaving .admin-content-frame,
-  .admin-surface .confirm-backdrop.open,
-  .admin-surface .confirm-dialog.open,
-  .admin-surface .confirm-dialog[data-tone="danger"].open {
+  body.admin-surface.is-admin-route-leaving .admin-content-frame {
     animation: none !important;
-  }
-
-  .admin-surface .confirm-dialog.open {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
   }
 }

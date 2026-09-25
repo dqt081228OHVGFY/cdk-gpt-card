@@ -32,16 +32,8 @@
         </div>
         <div class="inventory-groups">
           <section>
-            <strong id="inventoryCount" data-value="{{ inventory.normal }}">{{ inventory.normal }}</strong>
-            <small>正常号分组</small>
-          </section>
-          <section class="problem">
-            <strong id="problemInventoryCount" data-value="{{ inventory.problem }}">{{ inventory.problem }}</strong>
-            <small>问题号分组</small>
-          </section>
-          <section class="unchecked">
-            <strong id="uncheckedInventoryCount" data-value="{{ inventory.unchecked }}">{{ inventory.unchecked }}</strong>
-            <small>待测号分组</small>
+            <strong id="inventoryCount" data-value="{{ inventory.available }}">{{ inventory.available }}</strong>
+            <small>当前可用库存</small>
           </section>
         </div>
       </div>
@@ -149,11 +141,10 @@
           <div class="redeem-progress-track"><i data-progress-bar></i></div>
           <ol class="redeem-progress-stages" aria-label="提货进度">
             <li data-progress-stage="0"><i aria-hidden="true"></i><span>验码</span></li>
-            <li data-progress-stage="1"><i aria-hidden="true"></i><span>验活</span></li>
-            <li data-progress-stage="2"><i aria-hidden="true"></i><span>封装</span></li>
-            <li data-progress-stage="3"><i aria-hidden="true"></i><span>完成</span></li>
+            <li data-progress-stage="1"><i aria-hidden="true"></i><span>封装</span></li>
+            <li data-progress-stage="2"><i aria-hidden="true"></i><span>完成</span></li>
           </ol>
-          <p data-progress-detail>该批次包含提货验货商品，进度以真实测活结果为准</p>
+          <p data-progress-detail>正在按商品库存打包交付文件，请稍候</p>
         </section>
         <p class="form-footnote"><span aria-hidden="true">⌁</span> 兑换行为将记录时间与使用状态</p>
       </form>
@@ -172,5 +163,5 @@
   </section>
 
 </main>
-<script src="{{ url_for('static', path='app.js') }}?v=exception-motion-20260721-1"></script>
+<script src="{{ url_for('static', path='app.js') }}?v=ui-unify-20260925-9"></script>
 {% endblock %}

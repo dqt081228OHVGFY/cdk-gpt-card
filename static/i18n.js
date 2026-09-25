@@ -35,7 +35,6 @@
     "确认永久删除": "Permanently delete",
     "确认追加": "Confirm add-on",
     "确认禁用": "Confirm disable",
-    "删除死号": "Delete dead accounts",
 
     "GPT发卡网": "GPT CDK Store",
     "管理入口": "Admin",
@@ -83,9 +82,7 @@
     "上传原始 JSON、CPA JSON、SUB JSON 或 ZIP。系统自动识别源格式，并按你的选择生成 CPA 或 SUB 文件。": "Upload raw JSON, CPA JSON, SUB JSON, or ZIP. The system detects the source format and exports CPA or SUB as selected.",
     "兑换后不小心关了页面、没抄到账号？输入原兑换码在这里重新查回。": "Closed the page or missed the account after redemption? Enter the original CDK to retrieve it here.",
     "当前账号库存": "Current inventory",
-    "正常号分组": "Healthy group",
-    "问题号分组": "Problem group",
-    "待测号分组": "Unchecked group",
+    "当前可用库存": "Available inventory",
     "当前交付状态": "Delivery status",
     "实时可交付商品": "Live deliverable products",
     "库存充足": "In stock",
@@ -115,28 +112,24 @@
     "交付检查": "Delivery check",
     "提货进度": "Delivery progress",
     "验码": "Validate",
-    "验活": "Live check",
     "封装": "Package",
     "完成": "Complete",
     "正在校验兑换码并排队": "Validating CDKs and queuing the request",
-    "正在执行商品验活": "Running product liveness checks",
-    "该批次会按商品测活策略筛选可交付账号": "This batch filters deliverable accounts by each product's liveness policy",
     "正在生成交付文件": "Building delivery file",
-    "活号确认后生成一次性下载链接": "A one-time link is created after live accounts are confirmed",
+    "库存确认后生成一次性下载链接": "A one-time link is created after the inventory is confirmed",
     "正在收尾": "Finalizing",
     "加密库存正在安全出库": "Encrypted inventory is being safely checked out",
     "提货任务完成": "Delivery completed",
     "提货任务未完成": "Delivery failed",
     "下载链接已生成，请及时保存": "Download link generated. Please save it soon",
     "请根据提示调整后重试": "Adjust based on the prompt and try again",
-    "该批次包含提货验货商品，进度以真实测活结果为准": "This batch includes liveness-checked products; progress follows actual check results",
+    "正在按商品库存打包交付文件，请稍候": "Packing delivery files from product inventory, please wait",
 
     "控制台": "Dashboard",
     "管理员管理": "Admins",
     "商品管理": "Products",
     "CDK 管理": "CDK management",
     "账号文件": "Account files",
-    "独立测活": "Independent liveness",
     "批量导入": "Bulk import",
     "账户设置": "Account settings",
     "退出管理": "Log out",
@@ -144,29 +137,19 @@
     "管理员": "Admin",
     "一户一码生成、状态控制与兑换反查": "Generate one-account CDKs, manage status, and inspect redemptions",
     "查看识别格式、绑定 CDK 与交付状态": "View detected format, bound CDK, and delivery status",
-    "直接请求 Codex Models 接口；商品可单独控制测活开关、单次时间和 24h 次数。": "Calls the Codex Models API directly; each product controls liveness enablement, per-check timeout, and 24h limit.",
     "搜索卡密": "Search CDK",
     "搜索文件名": "Search filename",
     "卡密精确搜索": "Exact CDK search",
     "商品筛选": "Product filter",
     "CDK 状态": "CDK status",
     "文件状态": "File status",
-    "账号状态": "Account status",
     "目标状态": "Target status",
     "开始日期": "Start date",
     "结束日期": "End date",
     "全部商品": "All products",
     "全部状态": "All statuses",
-    "全部账号状态": "All account statuses",
-    "未检测": "Unchecked",
-    "活": "Live",
-    "死": "Dead",
-    "暂时未知": "Temporarily unknown",
-    "检测中": "Checking",
-    "待测": "Pending check",
     "可用": "Available",
     "不可用": "Unavailable",
-    "配置异常": "Config issue",
     "筛选": "Filter",
     "重置": "Reset",
     "批量修改状态": "Batch status",
@@ -176,7 +159,6 @@
     "批量禁用": "Batch disable",
     "批量删除": "Batch delete",
     "批量删除账号": "Batch delete accounts",
-    "批量检测账号状态": "Batch check accounts",
     "生成卡密": "Generate CDKs",
     "序号": "No.",
     "卡密": "CDK",
@@ -193,8 +175,6 @@
     "文件名": "Filename",
     "识别格式": "Detected format",
     "账号邮箱": "Account email",
-    "错误标签": "Error label",
-    "测活时间": "Checked at",
     "首次提取时间": "First delivery",
     "关联卡密": "Bound CDK",
     "上传时间": "Uploaded",
@@ -227,22 +207,6 @@
     "全部复制": "Copy all",
     "下载": "Download",
 
-    "内置 Codex 测活": "Built-in Codex liveness",
-    "最近同步": "Last sync",
-    "临时未知": "Temporary unknown",
-    "隔离 10 分钟后再参与候选": "Quarantined for 10 minutes before returning to candidates",
-    "上传并测活": "Upload and check",
-    "导入后立即使用该商品测活策略检测": "Checks immediately using this product's liveness policy",
-    "刷新模式": "Refresh mode",
-    "手动刷新": "Manual refresh",
-    "单次最多 50 个账号；unknown 和临时网络错误不会直接判死。": "Up to 50 accounts per run; unknown and temporary network errors are not marked dead directly.",
-    "同步到期账号": "Sync due accounts",
-    "系统会周期同步；这里可手动触发最多 50 个到期账号。": "The system syncs periodically; you can manually trigger up to 50 due accounts here.",
-    "立即同步": "Sync now",
-    "检测选中账号": "Check selected",
-    "刷新选中账号": "Refresh selected",
-    "删除选中死号": "Delete selected dead",
-
     "可使用": "Pending",
     "已使用": "Used",
     "已作废": "Voided",
@@ -256,7 +220,6 @@
     "确定禁用选中的卡密？禁用后将立即无法兑换。": "Disable the selected CDKs? They will no longer be redeemable immediately.",
     "确定删除选中的卡密？所有状态均会删除，相关兑换记录和临时链接也会一并移除，此操作不可恢复。": "Delete the selected CDKs? All statuses will be removed, related redemption records and temporary links will also be deleted. This cannot be undone.",
     "确定永久删除选中的账号文件？此操作不可恢复；已交付或已兑换关联的账号会被拒绝删除。": "Permanently delete the selected account files? This cannot be undone; delivered or redemption-bound accounts will be refused.",
-    "确认删除选中的死号？系统会将其中的死号作废并移出可兑换库存。": "Delete the selected dead accounts? The system will void them and remove them from redeemable inventory.",
 
     "未识别到有效的 32 位 CDK": "No valid 32-character CDK detected",
     "每次只能查找一个已兑换的 CDK": "You can look up only one redeemed CDK at a time",
@@ -275,8 +238,6 @@
     "接口返回异常，请刷新页面后重试": "Unexpected API response. Refresh and try again",
     "修改状态失败": "Failed to update status",
     "状态已修改": "Status updated",
-    "账号状态检测失败": "Account status check failed",
-    "账号状态已检测": "Account status checked",
     "卡密已复制": "CDK copied",
     "复制失败，请手动复制": "Copy failed. Please copy manually",
     "已复制": "Copied",
@@ -295,7 +256,139 @@
     "复制失败，请逐条复制": "Copy failed. Please copy one by one",
     "选择 JSON / CPA / SUB / SUB2 / ZIP": "Choose JSON / CPA / SUB / SUB2 / ZIP",
     "尚未选择文件": "No files selected",
-    "只能上传 JSON、CPA、SUB、SUB2 或 ZIP 文件": "Only JSON, CPA, SUB, SUB2, or ZIP files are allowed"
+    "只能上传 JSON、CPA、SUB、SUB2 或 ZIP 文件": "Only JSON, CPA, SUB, SUB2, or ZIP files are allowed",
+
+    "运行概览": "Operations overview",
+    "账号库存、CDK 交付与临时下载状态": "Account inventory, CDK delivery, and temporary download status",
+    "今日流转": "Today's flow",
+    "最近操作": "Recent activity",
+    "暂无操作记录": "No activity records",
+    "今日上传": "Uploaded today",
+    "昨日上传": "Uploaded yesterday",
+    "今日交付": "Delivered today",
+    "昨日交付": "Delivered yesterday",
+    "今日兑换": "Redeemed today",
+    "有效临时链接": "Active temporary links",
+    "累计上传": "Total uploaded",
+    "累计交付": "Total delivered",
+    "可用 CDK": "Available CDKs",
+
+    "GPT发卡网首页": "GPT CDK Store home",
+    "主导航": "Main navigation",
+    "进入管理员登录页面": "Go to admin login",
+    "CDK 输入示例": "CDK input examples",
+    "返回管理控制台": "Back to console",
+
+    "返回 GPT发卡网": "Back to GPT CDK Store",
+    "返回兑换页": "Back to redemption",
+    "管理你的": "Manage your",
+    "CDK 交付系统。": "CDK delivery system.",
+    "生成一户一码 CDK、批量导入账号文件，并反查每一次兑换和临时下载记录。": "Generate one-account CDKs, bulk-import account files, and trace every redemption and temporary download.",
+    "管理端功能": "Admin features",
+    "CDK 生成": "CDK generation",
+    "使用反查": "Usage lookup",
+    "链接重建": "Link rebuild",
+    "控制台访问": "Console access",
+    "管理员登录": "Admin login",
+    "管理员账号": "Admin username",
+    "登录密码": "Password",
+    "登录失败次数过多将被临时限制": "Too many failed logins will be temporarily blocked",
+
+    "下载后立即失效": "Expires immediately after download",
+    "反查操作": "Reverse lookup",
+    "查找已兑换文件": "Find redeemed file",
+
+    "支持原始 JSON 转 CPA 或 SUB、CPA 转 SUB、SUB 转 CPA": "Supports raw JSON to CPA or SUB, CPA to SUB, and SUB to CPA",
+    "原始 JSON": "Raw JSON",
+    "转换操作": "Convert",
+    "上传源文件": "Upload source file",
+
+    "创建和维护普通管理账号；超级管理账号受保护": "Create and manage standard admin accounts; super admin accounts are protected",
+    "创建普通管理": "Create standard admin",
+    "角色": "Role",
+    "号池地址": "Quota pool URL",
+    "更新时间": "Updated",
+    "不能禁用当前登录账号": "Cannot disable the currently logged-in account",
+    "受保护": "Protected",
+    "重置密码": "Reset password",
+    "配置号池": "Configure quota pool",
+    "配置文件管理": "Managed via config file",
+    "普通管理不能查看或修改超级管理账号": "Standard admins cannot view or modify super admin accounts",
+    "密码": "Password",
+    "管理秘钥": "Management key",
+    "为": "For",
+    "设置检测用号池": "Set the detection quota pool",
+    "留空则不修改": "Leave blank to keep unchanged",
+    "保存配置": "Save configuration",
+    "设置新密码": "Set new password",
+    "新密码": "New password",
+    "确认重置": "Confirm reset",
+
+    "修改当前管理账号的登录密码": "Change the current admin account's password",
+    "当前密码": "Current password",
+    "确认新密码": "Confirm new password",
+    "更新密码并退出": "Update password and log out",
+
+    "自动识别 CPA、SUB 与账号数组，SUB 多账号会拆分为独立库存": "Automatically detects CPA, SUB, and account arrays; multi-account SUB is split into separate inventory",
+    "导入方式": "Import method",
+    "本地文件": "Local files",
+    "手动输入": "Manual input",
+    "账号 JSON 入库": "Account JSON import",
+    "支持 JSON、CPA、SUB、SUB2 或包含这些文件的 ZIP。": "Supports JSON, CPA, SUB, SUB2, or a ZIP containing these files.",
+    "单批最大 500MB": "Up to 500MB per batch",
+    "单批上限": "Batch limit",
+    "文件": "File",
+    "上传要求": "Upload requirements",
+    "独立入库": "Imported individually",
+    "自动拆分": "Auto split",
+    "大小": "Size",
+    "不超过 500MB / 500 个账号": "Up to 500MB / 500 accounts",
+    "识别结果可在账号文件页查看；普通 JSON 会以 UNKNOWN 标记入库": "Detection results are available on the account files page; plain JSON is imported as UNKNOWN",
+    "上传": "Upload",
+    "手动 JSON 入库": "Manual JSON import",
+    "粘贴单个账号、账号数组或 SUB 配置。": "Paste a single account, an account array, or a SUB config.",
+    "手动输入最大 2MB": "Up to 2MB for manual input",
+    "输入上限": "Input limit",
+    "JSON 内容": "JSON content",
+    "识别并导入": "Detect and import",
+
+    "全选本页 CDK": "Select all CDKs on this page",
+    "关闭生成结果": "Close generation result",
+    "全选本页文件": "Select all files on this page",
+
+    "每个商品独立绑定库存与 CDK。": "Each product has its own inventory and CDKs.",
+    "新建商品": "New product",
+    "商品名称": "Product name",
+    "描述": "Description",
+    "低库存阈值": "Low-stock threshold",
+    "创建商品": "Create product",
+    "交付规则": "Delivery rules",
+    "库存交付": "Inventory delivery",
+    "直接从商品可用库存中发货": "Ships directly from the product's available inventory",
+    "低库存": "Low stock",
+    "低于阈值时首页标记库存告急": "Marks low stock on the homepage when below the threshold",
+    "商品隐藏": "Product hidden",
+    "已发 CDK 也不会继续兑换": "Issued CDKs can no longer be redeemed",
+    "商品级库存隔离": "Product-level inventory isolation",
+    "不提供删除商品，避免破坏历史兑换记录。": "Products cannot be deleted, to preserve historical redemption records.",
+    "可交付": "Deliverable",
+    "兑换": "Redemptions",
+    "编辑": "Edit",
+    "保存": "Save",
+    "暂无商品": "No products",
+
+    "启用": "Enabled",
+    "禁用": "Disabled",
+    "普通管理": "Standard admin",
+    "历史账号": "Legacy account",
+    "草稿": "Draft",
+    "已隐藏": "Hidden",
+    "待使用": "Pending use",
+
+    "管理中心": "Control center",
+    "卡密管理": "CDK management",
+    "文件管理": "File management",
+    "上传文件": "Upload files"
   };
 
   const KEY_EN = {
@@ -341,6 +434,10 @@
     [/^每页\s*(\d+)$/, (_m, size) => `${size} / page`],
     [/^账号\s*(.+)\s*已(.+)$/, (_m, username, state) => `Account ${username} is now ${translateCore(state).toLowerCase()}`],
     [/^正在生成$/, () => "Generating"],
+    [/^选择 CDK (.+)$/, (_m, code) => `Select CDK ${code}`],
+    [/^选择文件 (.+)$/, (_m, name) => `Select file ${name}`],
+    [/^(.+?)\s*·\s*GPT发卡网$/, (_m, head) => `${translateCore(head)} · GPT CDK Store`],
+    [/^(\d{1,2})\s*\/\s*(\D.*)$/, (_m, num, label) => `${num} / ${translateCore(label)}`],
   ];
 
   const textOriginals = new WeakMap();
@@ -348,6 +445,7 @@
   let currentLang = readInitialLanguage();
   let observer = null;
   let applying = false;
+  let originalTitle = null;
 
   function readInitialLanguage() {
     try {
@@ -479,52 +577,30 @@
     document.documentElement.dataset.lang = currentLang;
   }
 
-  function animateLanguageTextOverlay() {
+  function applyDocumentTitle() {
+    // <title> lives in <head>, which applyTranslations() never walks, so it is
+    // translated here. The original (Chinese) title is captured once so a switch
+    // back to zh restores it verbatim.
+    if (originalTitle === null) originalTitle = document.title;
+    const next = currentLang === "zh" ? originalTitle : translateWithWhitespace(originalTitle);
+    if (document.title !== next) document.title = next;
+  }
+
+  function animateLanguageSwitch() {
+    const root = document.documentElement;
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (!document.body || reducedMotion?.matches) return;
-    const fragment = document.createDocumentFragment();
-    let count = 0;
-    const candidates = document.querySelectorAll(
-      "main h1, main h2, main h3, main p, main label, main legend, main small, main b, main strong, main a, main button, main td, main th, main li, .site-notice h2, .site-notice p",
+    if (!root || reducedMotion?.matches) return;
+    // Compositor-only settle on the content column: one opacity + lift pass on
+    // <main>, no per-element overlay clones and no clip-path/blur, so it stays
+    // perfectly fluid. Re-adding the class after a forced reflow restarts it.
+    root.classList.remove("i18n-swapping");
+    void root.offsetWidth;
+    root.classList.add("i18n-swapping");
+    window.clearTimeout(animateLanguageSwitch._timer);
+    animateLanguageSwitch._timer = window.setTimeout(
+      () => root.classList.remove("i18n-swapping"),
+      520,
     );
-    candidates.forEach((element) => {
-      if (count >= 90 || element.children.length > 0 || element.closest("[data-i18n-skip], .language-switcher")) return;
-      const text = (element.textContent || "").trim();
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      if (!text || rect.width < 2 || rect.height < 2 || style.visibility === "hidden" || style.display === "none") return;
-      const cover = document.createElement("span");
-      cover.className = "i18n-text-cover";
-      cover.dataset.i18nSkip = "";
-      cover.textContent = text;
-      Object.assign(cover.style, {
-        left: `${rect.left}px`,
-        top: `${rect.top}px`,
-        width: `${rect.width}px`,
-        minHeight: `${rect.height}px`,
-        fontFamily: style.fontFamily,
-        fontSize: style.fontSize,
-        fontWeight: style.fontWeight,
-        fontStyle: style.fontStyle,
-        lineHeight: style.lineHeight,
-        letterSpacing: style.letterSpacing,
-        textAlign: style.textAlign,
-        textTransform: style.textTransform,
-        color: style.color,
-      });
-      fragment.appendChild(cover);
-      count += 1;
-    });
-    if (!count) return;
-    document.documentElement.classList.add("i18n-language-transition");
-    document.body.appendChild(fragment);
-    requestAnimationFrame(() => {
-      document.querySelectorAll(".i18n-text-cover").forEach((cover) => cover.classList.add("leaving"));
-    });
-    window.setTimeout(() => {
-      document.querySelectorAll(".i18n-text-cover").forEach((cover) => cover.remove());
-      document.documentElement.classList.remove("i18n-language-transition");
-    }, 520);
   }
 
   function updateToggle(button) {
@@ -557,19 +633,20 @@
   function setLanguage(lang) {
     if (!SUPPORTED.has(lang)) return;
     const changed = currentLang !== lang;
-    if (changed) animateLanguageTextOverlay();
+    if (changed) animateLanguageSwitch();
     currentLang = lang;
     try {
       window.localStorage?.setItem(STORAGE_KEY, lang);
     } catch (_) {}
     updateDocumentLanguage();
     applyTranslations(document.body);
+    applyDocumentTitle();
     const toggle = ensureToggle();
     if (changed && toggle) {
       toggle.classList.remove("is-switching");
       void toggle.offsetWidth;
       toggle.classList.add("is-switching");
-      window.setTimeout(() => toggle.classList.remove("is-switching"), 460);
+      window.setTimeout(() => toggle.classList.remove("is-switching"), 580);
     }
   }
 
@@ -591,6 +668,7 @@
   function init() {
     updateDocumentLanguage();
     applyTranslations(document.body);
+    applyDocumentTitle();
     ensureToggle();
     observeMutations();
   }

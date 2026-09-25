@@ -11,6 +11,44 @@
   --danger: #ff6b6b;
   --ok: #71e1a2;
   --shadow: 0 24px 100px rgba(0, 0, 0, 0.46);
+
+  /* Shared overlay system. Every dialog, drawer and toast — public or admin —
+     reads its surface, scale and motion from these tokens, so the five overlay
+     families can never drift into different colours or sizes again. */
+  --overlay-surface: #ffffff;
+  --overlay-surface-soft: #fafafa;
+  --overlay-ink: #18181b;
+  --overlay-ink-soft: #3f3f46;
+  --overlay-ink-muted: #71717a;
+  --overlay-border: rgba(15, 23, 42, 0.08);
+  --overlay-border-strong: rgba(15, 23, 42, 0.14);
+  --overlay-shadow: 0 32px 90px rgba(15, 23, 42, 0.2), 0 6px 18px rgba(15, 23, 42, 0.07);
+  --overlay-radius: 16px;
+  --overlay-radius-sm: 10px;
+  --overlay-pad: 26px;
+  --overlay-gap: 16px;
+  --overlay-width: min(92vw, 520px);
+  --overlay-width-wide: min(94vw, 720px);
+  --overlay-drawer-width: min(92vw, 460px);
+  --overlay-title: 22px;
+  --overlay-body: 14px;
+  --overlay-kicker: 11px;
+  --overlay-mark: 48px;
+  --overlay-backdrop: rgba(15, 23, 42, 0.44);
+  --overlay-blur: 10px;
+
+  /* Variant accent. Panels stay white; only these two values change. */
+  --overlay-accent: #18181b;
+  --overlay-accent-tint: #f4f4f5;
+
+  /* Motion tokens shared by every overlay enter/exit. */
+  --overlay-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --overlay-ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --overlay-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --overlay-enter: 420ms;
+  --overlay-exit: 200ms;
+  --overlay-step: 34ms;
+  --overlay-lead: 40ms;
 }
 
 .portal-shell .inventory-groups {
@@ -731,115 +769,201 @@ select:focus {
   min-width: 260px;
   max-width: 420px;
   padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  color: #f6f3e9;
-  background: rgba(18, 19, 16, 0.94);
-  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.36);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius-sm);
+  color: var(--overlay-ink);
+  background: var(--overlay-surface);
+  box-shadow: var(--overlay-shadow);
   opacity: 0;
   transform: translate(-50%, -10px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity var(--overlay-exit) ease, transform var(--overlay-exit) var(--overlay-ease-exit);
 }
 
 .toast.show {
   opacity: 1;
   transform: translate(-50%, 0);
+  animation: overlay-panel-in var(--overlay-enter) var(--overlay-ease) both;
 }
 
 .toast.error {
-  border-color: rgba(255, 107, 107, 0.46);
-  background: linear-gradient(135deg, rgba(255, 107, 107, 0.18), rgba(18, 19, 16, 0.94));
+  border-color: rgba(180, 35, 24, 0.28);
+  color: #b42318;
 }
 
 .toast.success {
-  border-color: rgba(113, 225, 162, 0.46);
-  background: linear-gradient(135deg, rgba(113, 225, 162, 0.14), rgba(18, 19, 16, 0.94));
+  border-color: rgba(22, 128, 91, 0.28);
+  color: #16805b;
+}
+
+/* ==========================================================================
+   Overlay system — one white surface, one size scale, one motion language.
+   Families: .site-notice, .confirm-dialog, .drawer, .card-create-modal and
+   .site-flash. Everything below reads from the --overlay-* tokens on :root;
+   variants only re-point --overlay-accent / --overlay-accent-tint, they never
+   invert the panel to a dark surface.
+   ========================================================================== */
+
+/* Shared backdrop: identical colour and blur for all five families. */
+.site-notice-backdrop,
+.confirm-backdrop,
+.drawer-backdrop,
+.card-create-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  backdrop-filter: blur(0);
+  opacity: 0;
+  transition: opacity var(--overlay-exit) ease, backdrop-filter var(--overlay-exit) ease;
+}
+
+.site-notice-backdrop.show,
+.confirm-backdrop.open,
+.drawer-backdrop.open,
+.card-create-backdrop.open {
+  opacity: 1;
+  backdrop-filter: blur(var(--overlay-blur));
+  transition-duration: var(--overlay-enter);
 }
 
 .site-notice-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 94;
-  background: rgba(24, 24, 27, 0.4);
-  opacity: 0;
-  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 190;
 }
 
-.site-notice-backdrop.show {
-  opacity: 1;
+.confirm-backdrop {
+  z-index: 170;
 }
 
-.site-notice {
+.card-create-backdrop {
+  z-index: 80;
+}
+
+.drawer-backdrop {
+  z-index: 30;
+}
+
+/* Shared centred-panel surface. */
+.site-notice,
+.confirm-dialog {
   position: fixed;
   top: 50%;
   left: 50%;
-  z-index: 95;
-  width: min(460px, calc(100vw - 32px));
-  min-height: 190px;
-  display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) 36px;
-  align-items: start;
-  gap: 0 16px;
-  padding: 26px;
+  width: var(--overlay-width);
+  padding: var(--overlay-pad);
   overflow: hidden;
-  border: 1px solid #d9ddd5;
-  border-radius: 14px;
-  color: #18181b;
-  background: #ffffff;
-  box-shadow: 0 32px 100px rgba(24, 24, 27, 0.24), 0 7px 24px rgba(24, 24, 27, 0.08);
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius);
+  color: var(--overlay-ink);
+  background: var(--overlay-surface);
+  box-shadow: var(--overlay-shadow);
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, calc(-50% + 20px)) scale(0.95);
-  transform-origin: 50% 72%;
-  transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1), transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translate(-50%, calc(-50% + 22px)) scale(0.94);
+  transform-origin: 50% 70%;
+  transition: opacity var(--overlay-exit) ease, transform var(--overlay-exit) var(--overlay-ease-exit);
   will-change: opacity, transform;
 }
 
-.site-notice.show {
+.site-notice.show,
+.confirm-dialog.open {
   opacity: 1;
   pointer-events: auto;
   transform: translate(-50%, -50%) scale(1);
+  animation: overlay-panel-in var(--overlay-enter) var(--overlay-ease) both;
 }
 
+/* Thin top accent — the only place a variant colour touches the panel edge. */
+.site-notice::before,
+.confirm-dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  pointer-events: none;
+  background: var(--overlay-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.site-notice.show::before,
+.confirm-dialog.open::before {
+  animation: overlay-accent-sweep 520ms var(--overlay-ease) 60ms both;
+}
+
+/* --- .site-notice -------------------------------------------------------- */
+.site-notice {
+  z-index: 191;
+  display: grid;
+  grid-template-columns: var(--overlay-mark) minmax(0, 1fr) 36px;
+  align-items: start;
+  gap: 0 var(--overlay-gap);
+}
+
+.site-notice.success {
+  --overlay-accent: #16805b;
+  --overlay-accent-tint: #e6f7ef;
+}
+
+.site-notice.error,
+.site-notice.exception {
+  --overlay-accent: #b42318;
+  --overlay-accent-tint: #fdeceb;
+}
+
+.site-notice.warning {
+  --overlay-accent: #92620a;
+  --overlay-accent-tint: #fdf4e3;
+}
+
+.site-notice.info {
+  --overlay-accent: #1d4ed8;
+  --overlay-accent-tint: #eaf0ff;
+}
+
+/* Auto-dismiss progress bar. */
 .site-notice::after {
   content: "";
   position: absolute;
   inset: auto 0 0;
   height: 3px;
-  background: #dc5a54;
+  background: var(--overlay-accent);
+  opacity: 0.4;
   transform: scaleX(0);
   transform-origin: left center;
 }
 
 .site-notice.show::after {
-  animation: site-notice-timeout 4.2s linear both;
-}
-
-.site-notice.success::after {
-  background: #16805b;
+  animation: overlay-timeout 4.2s linear both;
 }
 
 .site-notice-mark {
   position: relative;
-  width: 50px;
-  height: 50px;
+  width: var(--overlay-mark);
+  height: var(--overlay-mark);
   display: grid;
   place-items: center;
   grid-row: 1 / span 2;
   border-radius: 50%;
-  color: #a62e29;
-  background: #ffebe9;
-  box-shadow: inset 0 0 0 1px rgba(190, 55, 49, 0.13);
+  color: var(--overlay-accent);
+  background: var(--overlay-accent-tint);
+  box-shadow: inset 0 0 0 1px var(--overlay-border-strong);
+}
+
+.site-notice-mark::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid currentColor;
+  border-radius: inherit;
+  opacity: 0;
 }
 
 .site-notice.show .site-notice-mark {
-  animation: site-notice-mark-in 540ms 80ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: overlay-mark-in 380ms var(--overlay-ease) var(--overlay-lead) both;
 }
 
-.site-notice.success .site-notice-mark {
-  color: #16805b;
-  background: #def8e9;
-  box-shadow: inset 0 0 0 1px rgba(31, 173, 111, 0.14);
+.site-notice.show .site-notice-mark::after {
+  animation: overlay-mark-ring 900ms ease-out 280ms 2 both;
 }
 
 .site-notice-mark span {
@@ -855,28 +979,27 @@ select:focus {
 
 .site-notice-kicker {
   display: block;
-  margin-bottom: 4px;
-  color: #a62e29;
-  font-size: 10px;
+  margin-bottom: 5px;
+  color: var(--overlay-accent);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: var(--overlay-kicker);
   font-weight: 850;
-  letter-spacing: 0;
-}
-
-.site-notice.success .site-notice-kicker {
-  color: #16805b;
+  letter-spacing: 0.1em;
 }
 
 .site-notice h2 {
   margin: 0;
-  color: #18181b;
-  font-size: 21px;
-  line-height: 1.2;
+  color: var(--overlay-ink);
+  font-size: var(--overlay-title);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
 }
 
 .site-notice p {
-  margin: 7px 0 0;
-  color: #676771;
-  font-size: 14px;
+  max-width: 34em;
+  margin: 8px 0 0;
+  color: var(--overlay-ink-muted);
+  font-size: var(--overlay-body);
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -887,11 +1010,12 @@ select:focus {
   display: grid;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 8px;
-  color: #8b929d;
+  border-radius: var(--overlay-radius-sm);
+  color: var(--overlay-ink-muted);
   background: transparent;
   cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease,
+    transform 220ms var(--overlay-ease-soft);
 }
 
 .site-notice-close span {
@@ -901,131 +1025,114 @@ select:focus {
 }
 
 .site-notice-close:hover {
-  color: #18181b;
-  border-color: #d7dcd4;
-  background: #f2f4ef;
-  transform: rotate(4deg);
+  color: var(--overlay-ink);
+  border-color: var(--overlay-border-strong);
+  background: var(--overlay-surface-soft);
+  transform: rotate(90deg);
+}
+
+.site-notice-close:active {
+  transform: rotate(90deg) scale(0.92);
 }
 
 .site-notice-confirm {
-  min-width: 100px;
+  min-width: 104px;
   min-height: 40px;
   grid-column: 2 / 4;
   justify-self: end;
   margin-top: 22px;
-  padding: 0 17px;
-  border: 1px solid #18181b;
-  border-radius: 7px;
+  padding: 0 18px;
+  border: 1px solid var(--overlay-ink);
+  border-radius: var(--overlay-radius-sm);
   color: #ffffff;
-  background: #18181b;
+  background: var(--overlay-ink);
   cursor: pointer;
   font-size: 13px;
   font-weight: 800;
-  transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 170ms ease, background 170ms ease;
-}
-
-.site-notice.success .site-notice-confirm {
-  border-color: #16805b;
-  background: #16805b;
+  transition: transform 180ms var(--overlay-ease-soft), box-shadow 180ms ease, background 180ms ease;
 }
 
 .site-notice-confirm:hover {
-  box-shadow: 0 8px 18px rgba(24, 24, 27, 0.15);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
   transform: translateY(-2px);
 }
 
 .site-notice-confirm:active {
   box-shadow: none;
-  transform: translateY(0) scale(0.98);
+  transform: translateY(0) scale(0.97);
 }
 
 .site-notice-close:focus-visible,
 .site-notice-confirm:focus-visible {
-  outline: 3px solid rgba(24, 24, 27, 0.16);
+  outline: 3px solid rgba(15, 23, 42, 0.16);
   outline-offset: 2px;
 }
 
-@keyframes site-notice-mark-in {
-  0% { opacity: 0; transform: scale(0.5) rotate(-12deg); }
-  70% { opacity: 1; transform: scale(1.1) rotate(3deg); }
-  100% { opacity: 1; transform: scale(1) rotate(0); }
+/* Staggered child reveal: mark -> kicker -> title -> message -> action. */
+.site-notice.show .site-notice-kicker {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step)) both;
 }
 
-@keyframes site-notice-timeout {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+.site-notice.show h2 {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 2) both;
 }
 
-@media (max-width: 520px) {
-  .site-notice {
-    width: calc(100vw - 20px);
-    min-height: 178px;
-    grid-template-columns: 44px minmax(0, 1fr) 34px;
-    gap: 0 12px;
-    padding: 20px 18px;
-    border-radius: 11px;
-  }
-
-  .site-notice-mark {
-    width: 44px;
-    height: 44px;
-  }
-
-  .site-notice h2 {
-    font-size: 19px;
-  }
-
-  .site-notice-confirm {
-    width: 100%;
-    grid-column: 1 / -1;
-    margin-top: 18px;
-  }
+.site-notice.show p {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 3) both;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .site-notice,
-  .site-notice-backdrop,
-  .site-notice-close,
-  .site-notice-confirm {
-    transition-duration: 1ms !important;
-  }
-
-  .site-notice.show::after,
-  .site-notice.show .site-notice-mark {
-    animation: none !important;
-  }
+.site-notice.show .site-notice-confirm {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 4) both;
 }
 
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: rgba(0, 0, 0, 0.28);
-  opacity: 0;
-  transition: opacity 180ms ease;
+/* --- .site-flash --------------------------------------------------------- */
+/* Server-rendered flash seed; the toast layer picks it up and removes it. */
+.site-flash {
+  max-width: var(--overlay-width);
+  margin: 0 0 16px;
+  padding: 13px 16px;
+  border: 1px solid var(--overlay-border);
+  border-left: 3px solid var(--overlay-accent);
+  border-radius: var(--overlay-radius-sm);
+  color: var(--overlay-ink);
+  background: var(--overlay-surface);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
+  font-size: var(--overlay-body);
+  line-height: 1.6;
 }
 
-.drawer-backdrop.open {
-  opacity: 1;
+.site-flash[data-message-type="success"] {
+  --overlay-accent: #16805b;
 }
 
+.site-flash[data-message-type="error"] {
+  --overlay-accent: #b42318;
+}
+
+/* --- .drawer ------------------------------------------------------------- */
 .drawer {
   position: fixed;
   top: 0;
   right: 0;
   z-index: 31;
-  width: min(420px, calc(100vw - 28px));
-  height: 100vh;
-  padding: 26px;
+  width: var(--overlay-drawer-width);
+  height: 100dvh;
+  padding: var(--overlay-pad);
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--line);
-  background: linear-gradient(135deg, rgba(216, 255, 98, 0.08), transparent 34%), rgba(14, 15, 12, 0.98);
-  box-shadow: -28px 0 80px rgba(0, 0, 0, 0.42);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--overlay-border);
+  border-right: 0;
+  border-radius: var(--overlay-radius) 0 0 var(--overlay-radius);
+  color: var(--overlay-ink);
+  background: var(--overlay-surface);
+  box-shadow: var(--overlay-shadow);
   visibility: hidden;
   pointer-events: none;
   transform: translateX(100%);
-  transition: transform 220ms ease, visibility 0s linear 220ms;
+  transition: transform var(--overlay-exit) var(--overlay-ease-exit),
+    visibility 0s linear var(--overlay-exit);
 }
 
 .drawer.open {
@@ -1033,6 +1140,7 @@ select:focus {
   pointer-events: auto;
   transform: translateX(0);
   transition-delay: 0s;
+  animation: overlay-drawer-in var(--overlay-enter) var(--overlay-ease) both;
 }
 
 .drawer-header {
@@ -1040,33 +1148,53 @@ select:focus {
   justify-content: space-between;
   align-items: flex-start;
   gap: 18px;
-  margin-bottom: 26px;
+  margin-bottom: 22px;
 }
 
 .drawer-header h2 {
   margin: 0;
-  font-size: 24px;
-  line-height: 1.2;
+  color: var(--overlay-ink);
+  font-size: var(--overlay-title);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
 }
 
 .drawer-header p {
   margin: 8px 0 0;
-  color: var(--muted);
+  color: var(--overlay-ink-muted);
+  font-size: var(--overlay-body);
+  line-height: 1.6;
+}
+
+.drawer.open .drawer-header {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) var(--overlay-lead) both;
+}
+
+.drawer.open .drawer-form {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 2) both;
 }
 
 .drawer-close {
   height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: #f0eee5;
-  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--overlay-border-strong);
+  border-radius: var(--overlay-radius-sm);
+  color: var(--overlay-ink-soft);
+  background: var(--overlay-surface);
   cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease,
+    transform 180ms var(--overlay-ease-soft);
 }
 
 .drawer-close:hover {
-  border-color: rgba(216, 255, 98, 0.36);
-  background: rgba(216, 255, 98, 0.12);
+  color: var(--overlay-ink);
+  border-color: var(--overlay-ink);
+  background: var(--overlay-surface-soft);
+  transform: translateY(-1px);
+}
+
+.drawer-close:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .drawer-form {
@@ -1079,7 +1207,153 @@ select:focus {
 }
 
 .usage-drawer {
-  width: min(520px, calc(100vw - 28px));
+  width: min(94vw, 560px);
+}
+
+/* --- Shared overlay keyframes -------------------------------------------- */
+@keyframes overlay-panel-in {
+  0% { opacity: 0; transform: translate(-50%, calc(-50% + 26px)) scale(0.94); }
+  62% { opacity: 1; transform: translate(-50%, calc(-50% - 4px)) scale(1.012); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes overlay-drawer-in {
+  0% { opacity: 0.5; transform: translateX(100%); }
+  70% { opacity: 1; transform: translateX(-6px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes overlay-child-in {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes overlay-mark-in {
+  0% { opacity: 0; transform: scale(0.54) rotate(-10deg); }
+  58% { opacity: 1; transform: scale(1.14) rotate(3deg); }
+  78% { transform: scale(0.97) rotate(0); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes overlay-mark-ring {
+  0% { opacity: 0.5; transform: scale(0.78); }
+  70%, 100% { opacity: 0; transform: scale(1.46); }
+}
+
+@keyframes overlay-accent-sweep {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes overlay-timeout {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* --- Overlay responsive scale --------------------------------------------
+   Every family follows the same breakpoints by re-pointing the tokens, so a
+   dialog can never shrink on one page and stay large on another. */
+@media (max-width: 720px) {
+  :root {
+    --overlay-pad: 22px;
+    --overlay-gap: 14px;
+    --overlay-radius: 14px;
+    --overlay-title: 20px;
+    --overlay-mark: 44px;
+    --overlay-drawer-width: min(94vw, 420px);
+  }
+}
+
+@media (max-width: 520px) {
+  :root {
+    --overlay-pad: 18px;
+    --overlay-gap: 12px;
+    --overlay-radius: 13px;
+    --overlay-radius-sm: 9px;
+    --overlay-title: 19px;
+    --overlay-body: 13px;
+    --overlay-mark: 42px;
+    --overlay-width: calc(100vw - 20px);
+    --overlay-width-wide: calc(100vw - 20px);
+    --overlay-drawer-width: calc(100vw - 20px);
+  }
+
+  .site-notice {
+    grid-template-columns: var(--overlay-mark) minmax(0, 1fr) 34px;
+  }
+
+  .site-notice-confirm {
+    width: 100%;
+    grid-column: 1 / -1;
+    margin-top: 18px;
+  }
+
+  .confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-actions > * {
+    width: 100%;
+  }
+
+  .drawer {
+    border-radius: 0;
+  }
+}
+
+/* --- Overlay reduced motion ----------------------------------------------
+   One block disables every overlay enter/exit and settles each panel in its
+   final pose; nothing may be left mid-animation. */
+@media (prefers-reduced-motion: reduce) {
+  .site-notice-backdrop,
+  .confirm-backdrop,
+  .drawer-backdrop,
+  .card-create-backdrop,
+  .site-notice,
+  .confirm-dialog,
+  .drawer,
+  .card-create-modal,
+  .site-notice.show,
+  .confirm-dialog.open,
+  .drawer.open,
+  .card-create-modal.open,
+  .site-notice.show::before,
+  .site-notice.show::after,
+  .confirm-dialog.open::before,
+  .site-notice.show .site-notice-mark,
+  .site-notice.show .site-notice-mark::after,
+  .site-notice.show .site-notice-kicker,
+  .site-notice.show h2,
+  .site-notice.show p,
+  .site-notice.show .site-notice-confirm,
+  .site-notice-close,
+  .site-notice-confirm,
+  .confirm-close,
+  .drawer-close,
+  .confirm-dialog.open .confirm-kicker,
+  .confirm-dialog.open h2,
+  .confirm-dialog.open .confirm-message-box,
+  .confirm-dialog.open .confirm-actions,
+  .drawer.open .drawer-header,
+  .drawer.open .drawer-form {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+
+  .site-notice.show,
+  .confirm-dialog.open {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  .drawer.open {
+    transform: translateX(0);
+  }
+
+  .site-notice.show::before,
+  .confirm-dialog.open::before {
+    transform: scaleX(1);
+  }
 }
 
 .usage-summary {
@@ -1276,6 +1550,54 @@ body.is-route-loading .logout-button {
 @keyframes route-fade {
   to {
     opacity: 0.58;
+  }
+}
+
+/* Page loading fade veil — a clean white surface that covers each page on load
+   and fades away to reveal it. Opacity/transform only (compositor-cheap). The
+   controller (base.html) marks <html class="page-fade-js"> before this element
+   is parsed, so the JS-driven transition and the no-JS fallback never overlap. */
+.page-fade {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  background: #ffffff;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 440ms ease, visibility 0s linear 440ms;
+}
+
+/* No-JS fallback: without the controller, reveal on a timer so the page is
+   never trapped behind the veil. */
+html:not(.page-fade-js) .page-fade {
+  animation: page-fade-reveal 460ms ease 320ms forwards;
+}
+
+.page-fade.is-covering {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 240ms ease;
+}
+
+.page-fade.is-revealed {
+  opacity: 0;
+  visibility: hidden;
+}
+
+@keyframes page-fade-reveal {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-fade {
+    transition: opacity 120ms linear, visibility 0s linear 120ms;
+  }
+  html:not(.page-fade-js) .page-fade {
+    animation-duration: 1ms;
+    animation-delay: 80ms;
   }
 }
 
@@ -2004,44 +2326,37 @@ td {
   background: var(--green);
 }
 
-.confirm-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  background: rgba(0, 0, 0, 0.48);
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.confirm-backdrop.open {
-  opacity: 1;
-}
-
+/* --- .confirm-dialog ----------------------------------------------------- */
 .confirm-dialog {
-  position: fixed;
-  top: 33vh;
-  left: 50%;
-  z-index: 71;
-  width: min(420px, calc(100vw - 32px));
-  padding: 24px 52px 24px 24px;
-  border: 1px solid rgba(216, 255, 98, 0.28);
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(216, 255, 98, 0.09), rgba(18, 19, 16, 0.98) 42%), rgba(18, 19, 16, 0.98);
-  box-shadow: 0 28px 100px rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  transform: translate(-50%, calc(-50% + 10px)) scale(0.98);
-  transition: opacity 160ms ease, transform 160ms ease;
+  z-index: 171;
 }
 
-.confirm-dialog.open {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+.confirm-dialog[data-tone="danger"] {
+  --overlay-accent: #b42318;
+  --overlay-accent-tint: #fdeceb;
+}
+
+.confirm-kicker {
+  display: block;
+  width: fit-content;
+  margin-bottom: 8px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: var(--overlay-accent);
+  background: var(--overlay-accent-tint);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: var(--overlay-kicker);
+  font-weight: 850;
+  letter-spacing: 0.1em;
 }
 
 .confirm-dialog h2 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
+  padding-right: 40px;
+  color: var(--overlay-ink);
+  font-size: var(--overlay-title);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
 }
 
 .confirm-close {
@@ -2051,17 +2366,24 @@ td {
   width: 34px;
   height: 34px;
   display: block;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: #f0eee5;
-  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid transparent;
+  border-radius: var(--overlay-radius-sm);
+  color: var(--overlay-ink-muted);
+  background: transparent;
   cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease,
+    transform 220ms var(--overlay-ease-soft);
 }
 
 .confirm-close:hover {
-  color: #12140d;
-  border-color: rgba(216, 255, 98, 0.5);
-  background: var(--green);
+  color: var(--overlay-ink);
+  border-color: var(--overlay-border-strong);
+  background: var(--overlay-surface-soft);
+  transform: rotate(90deg);
+}
+
+.confirm-close:active {
+  transform: rotate(90deg) scale(0.92);
 }
 
 .confirm-close::before,
@@ -2085,16 +2407,49 @@ td {
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 
-.confirm-dialog p {
-  margin: 12px 0 22px;
-  color: #d4d1c5;
-  line-height: 1.6;
+.confirm-message-box {
+  margin: 16px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius-sm);
+  background: var(--overlay-surface-soft);
+}
+
+.confirm-dialog p,
+.confirm-message-box p {
+  margin: 0;
+  color: var(--overlay-ink-muted);
+  font-size: var(--overlay-body);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .confirm-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
+}
+
+/* Staggered child reveal: kicker -> title -> message -> actions. */
+.confirm-dialog.open .confirm-kicker {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) var(--overlay-lead) both;
+}
+
+.confirm-dialog.open h2 {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step)) both;
+}
+
+.confirm-dialog.open .confirm-message-box {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 2) both;
+}
+
+.confirm-dialog.open .confirm-actions {
+  animation: overlay-child-in 240ms var(--overlay-ease-soft) calc(var(--overlay-lead) + var(--overlay-step) * 3) both;
+}
+
+.confirm-close:focus-visible {
+  outline: 3px solid rgba(15, 23, 42, 0.16);
+  outline-offset: 2px;
 }
 
 th.center,
@@ -2143,18 +2498,6 @@ td.center .switch-form {
   border-color: rgba(255, 107, 107, 0.42);
 }
 
-.status.account-available {
-  color: #dfffea;
-  border-color: rgba(113, 225, 162, 0.42);
-  background: rgba(113, 225, 162, 0.1);
-}
-
-.status.account-unavailable {
-  color: #ffd7d7;
-  border-color: rgba(255, 107, 107, 0.42);
-  background: rgba(255, 107, 107, 0.1);
-}
-
 .switch-form {
   margin: 0;
 }
@@ -2195,7 +2538,9 @@ td.center .switch-form {
   border-radius: 50%;
   background: var(--danger);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  transition: transform 180ms ease, background 160ms ease, box-shadow 160ms ease;
+  transform-origin: center;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background 160ms ease, box-shadow 160ms ease;
 }
 
 .toggle-switch b {
@@ -2218,6 +2563,29 @@ td.center .switch-form {
   transform: translateX(20px);
   background: var(--green);
   box-shadow: 0 0 16px rgba(216, 255, 98, 0.45);
+}
+
+/* Squash-and-stretch pulse layered on top of the translate transition. It runs
+   on the `scale` property (independent of `transform`), so the thumb keeps
+   sliding via its transition while it briefly stretches in the travel
+   direction — a livelier, stronger toggle without fighting the slide. */
+.switch-thumb.is-sliding {
+  animation: switch-thumb-squash 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes switch-thumb-squash {
+  0% { scale: 1 1; }
+  42% { scale: 1.4 0.82; }
+  100% { scale: 1 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-thumb {
+    transition: transform 140ms ease, background 160ms ease, box-shadow 160ms ease;
+  }
+  .switch-thumb.is-sliding {
+    animation: none;
+  }
 }
 
 .toggle-switch.off {
@@ -3272,9 +3640,7 @@ body {
 .table-wrap,
 .upload-card,
 .upload-file-box,
-.upload-spec-grid div,
-.drawer,
-.confirm-dialog {
+.upload-spec-grid div {
   border-radius: 4px;
 }
 
@@ -3522,120 +3888,6 @@ html.is-exception-leaving .login-stage {
   animation: exception-page-out 360ms cubic-bezier(0.3, 0, 0.2, 1) both;
 }
 
-.site-notice-backdrop {
-  background:
-    linear-gradient(90deg, rgba(24, 24, 27, 0.16), rgba(24, 24, 27, 0.1)),
-    rgba(10, 10, 12, 0.54);
-  backdrop-filter: blur(8px);
-}
-
-.site-notice {
-  width: min(492px, calc(100vw - 32px));
-  grid-template-columns: 56px minmax(0, 1fr) 36px;
-  gap: 0 16px;
-  padding: 27px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 18px;
-  color: #f4f4f5;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
-    #111113;
-  box-shadow: 0 34px 110px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transform: translate(-50%, calc(-50% + 18px)) scale(0.96);
-}
-
-.site-notice.success,
-.site-notice.error {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
-    #111113;
-}
-
-.site-notice.show {
-  animation: notice-panel-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.site-notice.error.show,
-.site-notice.exception.show {
-  animation: notice-error-in 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.site-notice::before {
-  inset: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 13px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
-  opacity: 0;
-  transform: translateX(-42%);
-}
-
-.site-notice.error.show::before,
-.site-notice.exception.show::before {
-  animation: notice-scan 840ms 90ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.site-notice::after,
-.site-notice.success::after,
-.site-notice.error::after {
-  height: 3px;
-  background: linear-gradient(90deg, #f4f4f5, #a1a1aa, #f4f4f5);
-}
-
-.site-notice-mark,
-.site-notice.success .site-notice-mark,
-.site-notice.error .site-notice-mark {
-  width: 56px;
-  height: 56px;
-  color: #18181b;
-  background: #f4f4f5;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28), inset 0 0 0 1px #ffffff;
-}
-
-.site-notice.error.show .site-notice-mark,
-.site-notice.exception.show .site-notice-mark {
-  animation: notice-mark-alert 620ms 70ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.site-notice-kicker,
-.site-notice.success .site-notice-kicker,
-.site-notice.error .site-notice-kicker {
-  color: #d4d4d8;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-}
-
-.site-notice h2 {
-  color: #ffffff;
-  font-size: 23px;
-  letter-spacing: 0;
-}
-
-.site-notice p {
-  color: rgba(244, 244, 245, 0.76);
-}
-
-.site-notice-close {
-  color: #d4d4d8;
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.site-notice-close:hover {
-  color: #18181b;
-  border-color: #ffffff;
-  background: #f4f4f5;
-}
-
-.site-notice-confirm,
-.site-notice.success .site-notice-confirm,
-.site-notice.error .site-notice-confirm {
-  border-color: #f4f4f5;
-  color: #18181b;
-  background: #f4f4f5;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-}
-
 @keyframes route-wash-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -3647,52 +3899,12 @@ html.is-exception-leaving .login-stage {
   100% { opacity: 0; transform: translateY(-10px) scale(0.99); filter: contrast(1); }
 }
 
-@keyframes notice-panel-in {
-  from { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.96); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-@keyframes notice-error-in {
-  0% { opacity: 0; transform: translate(-50%, calc(-50% + 18px)) scale(0.96); }
-  58% { opacity: 1; transform: translate(calc(-50% - 2px), -50%) scale(1.006); }
-  72% { transform: translate(calc(-50% + 2px), -50%) scale(1); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-@keyframes notice-mark-alert {
-  0% { opacity: 0; transform: scale(0.62) rotate(-10deg); }
-  48% { opacity: 1; transform: scale(1.12) rotate(2deg); }
-  72% { transform: scale(0.96) rotate(0); }
-  100% { transform: scale(1) rotate(0); }
-}
-
-@keyframes notice-scan {
-  0% { opacity: 0; transform: translateX(-44%); }
-  30% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(44%); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   body.is-route-loading::before,
   html.is-exception-leaving .portal-stage,
-  html.is-exception-leaving .login-stage,
-  .site-notice.show,
-  .site-notice.error.show,
-  .site-notice.exception.show,
-  .site-notice.error.show::before,
-  .site-notice.exception.show::before,
-  .site-notice.error.show .site-notice-mark,
-  .site-notice.exception.show .site-notice-mark {
+  html.is-exception-leaving .login-stage {
     animation: none !important;
     transform: none !important;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .site-notice.show,
-  .site-notice.error.show,
-  .site-notice.exception.show {
-    transform: translate(-50%, -50%) scale(1) !important;
   }
 }
 
@@ -3962,116 +4174,43 @@ html.is-exception-leaving .login-stage {
   50% { box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.04), 0 0 16px rgba(37, 99, 235, 0.42); }
 }
 
-/* Success is a discrete delivery state, not a generic toast. */
-.site-notice.success {
-  overflow: visible;
-  border-color: rgba(216, 255, 98, 0.48);
-  background:
-    radial-gradient(circle at 88% 10%, rgba(113, 225, 162, 0.28), transparent 28%),
-    linear-gradient(142deg, rgba(216, 255, 98, 0.21), rgba(21, 31, 26, 0.2) 48%, transparent 72%),
-    #0c1117;
+/* Language switch: a smooth, GPU-only crossfade. The content column briefly
+   settles (opacity + a slight lift) as the copy swaps to the new language —
+   one compositor layer, not ~90 blurred overlay clones, so it stays perfectly
+   fluid. `backwards` fill means no transform lingers at rest, so <main> never
+   becomes a containing block for the fixed drawers inside it. Portal + admin. */
+html.i18n-swapping main {
+  animation: i18n-content-swap 480ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
-.site-notice.success .site-notice-mark {
-  position: relative;
-  isolation: isolate;
-  overflow: visible;
-  box-shadow: 0 15px 34px rgba(113, 225, 162, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.44);
-}
-
-.site-notice.success .site-notice-mark::before,
-.site-notice.success .site-notice-mark::after {
+.language-switcher.is-switching { animation: language-toggle-pop 520ms var(--overlay-ease, cubic-bezier(0.16, 1, 0.3, 1)) both; }
+.language-switcher.is-switching span { animation: language-glyph-swap 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.language-switcher.is-switching::after {
+  content: "";
   position: absolute;
-  z-index: -1;
-  border: 1px solid rgba(216, 255, 98, 0.45);
+  inset: 0;
   border-radius: inherit;
-  content: "";
-}
-
-.site-notice.success .site-notice-mark::before { inset: -7px; opacity: 0.75; }
-.site-notice.success .site-notice-mark::after { inset: -14px; opacity: 0; }
-.site-notice.success.show .site-notice-mark::after { animation: delivery-seal-ping 1.7s 300ms ease-out infinite; }
-.site-notice.success.show .site-notice-mark { animation: delivery-seal-in 560ms 80ms cubic-bezier(0.16, 1.32, 0.3, 1) both; }
-
-.site-notice.success .site-notice-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.site-notice.success .site-notice-kicker::before {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #d8ff62;
-  box-shadow: 0 0 12px rgba(216, 255, 98, 0.78);
-  content: "";
-}
-
-.site-notice.success h2 { font-size: 26px; letter-spacing: -0.045em; }
-.site-notice.success p { color: rgba(248, 250, 252, 0.8); }
-
-.site-notice.success .site-notice-confirm {
-  position: relative;
-  min-width: 128px;
-  padding-right: 40px;
-  overflow: hidden;
-  border: 0;
-  background: linear-gradient(100deg, #d8ff62, #9df4bd);
-}
-
-.site-notice.success .site-notice-confirm::after {
-  position: absolute;
-  right: 15px;
-  top: 50%;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-  content: "→";
-  transform: translateY(-52%);
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.site-notice.success .site-notice-confirm:hover::after { transform: translate(3px, -52%); }
-
-@keyframes delivery-seal-in {
-  0% { opacity: 0; transform: scale(0.58) rotate(-12deg); }
-  72% { opacity: 1; transform: scale(1.1) rotate(2deg); }
-  100% { transform: scale(1) rotate(0); }
-}
-
-@keyframes delivery-seal-ping {
-  0% { opacity: 0.62; transform: scale(0.82); }
-  75%, 100% { opacity: 0; transform: scale(1.28); }
-}
-
-/* Language changes retain the old glyphs briefly above the new copy, giving
-   the switch a precise text-overlay replacement instead of a page flash. */
-.i18n-text-cover {
-  position: fixed;
-  z-index: 145;
-  display: block;
-  margin: 0;
+  border: 1.5px solid var(--overlay-accent, #16805b);
   pointer-events: none;
-  white-space: pre-wrap;
-  overflow: hidden;
-  transform-origin: left center;
-  will-change: opacity, clip-path, transform;
+  animation: language-ring-pulse 560ms var(--overlay-ease, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 
-.i18n-text-cover.leaving { animation: i18n-text-cover-out 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-.language-switcher.is-switching span { animation: language-toggle-swap 440ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-@keyframes i18n-text-cover-out {
-  0% { opacity: 1; clip-path: inset(0 0 0 0); transform: translateY(0); }
-  100% { opacity: 0; clip-path: inset(0 0 100% 0); transform: translateY(-3px); }
+@keyframes language-toggle-pop {
+  0% { transform: translateY(0) scale(1); }
+  32% { transform: translateY(-2px) scale(1.06); }
+  100% { transform: translateY(0) scale(1); }
 }
 
-@keyframes language-toggle-swap {
-  0% { transform: rotateX(0) scale(1); }
-  48% { transform: rotateX(90deg) scale(0.9); }
-  100% { transform: rotateX(0) scale(1); }
+@keyframes language-glyph-swap {
+  0% { opacity: 1; transform: scale(1) rotate(0); }
+  40% { opacity: 0; transform: scale(0.4) rotate(-12deg); }
+  60% { opacity: 0; transform: scale(0.4) rotate(10deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes language-ring-pulse {
+  0% { opacity: 0.55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.45); }
 }
 
 @media (max-width: 560px) {
@@ -4081,11 +4220,11 @@ html.is-exception-leaving .login-stage {
 
 @media (prefers-reduced-motion: reduce) {
   .portal-shell .redeem-progress-stages li.active > i,
-  .site-notice.success.show .site-notice-mark,
-  .site-notice.success.show .site-notice-mark::after,
-  .i18n-text-cover.leaving,
-  .language-switcher.is-switching span { animation: none !important; }
-  .i18n-text-cover { display: none !important; }
+  html.i18n-swapping main,
+  .language-switcher.is-switching,
+  .language-switcher.is-switching span,
+  .language-switcher.is-switching::after { animation: none !important; }
+  .language-switcher.is-switching::after { display: none !important; }
 }
 
 /* Motion-forward, colour-quiet finish: neutral surfaces and a single ink
@@ -4108,24 +4247,9 @@ html.is-exception-leaving .login-stage {
   50% { box-shadow: 0 0 0 6px rgba(24, 24, 27, 0.03), 0 0 18px rgba(24, 24, 27, 0.28); }
 }
 
-.site-notice.success {
-  border-color: rgba(24, 24, 27, 0.24);
-  background:
-    radial-gradient(circle at 86% 8%, rgba(255, 255, 255, 0.12), transparent 28%),
-    linear-gradient(142deg, rgba(255, 255, 255, 0.1), transparent 58%),
-    #171717;
-}
-.site-notice.success .site-notice-mark { color: #18181b; background: #f4f4f5; box-shadow: 0 15px 34px rgba(0, 0, 0, 0.26), inset 0 0 0 1px #ffffff; }
-.site-notice.success .site-notice-mark::before,
-.site-notice.success .site-notice-mark::after { border-color: rgba(255, 255, 255, 0.32); }
-.site-notice.success .site-notice-kicker { color: #d4d4d8; }
-.site-notice.success .site-notice-kicker::before { background: #f4f4f5; box-shadow: 0 0 12px rgba(255, 255, 255, 0.46); }
-.site-notice.success .site-notice-confirm { color: #ffffff; background: #f4f4f5; color: #18181b; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24); }
-
-@keyframes i18n-text-cover-out {
-  0% { opacity: 1; clip-path: inset(0 0 0 0); transform: translateY(0) scaleY(1); }
-  48% { opacity: 1; clip-path: inset(0 0 42% 0); transform: translateY(-4px) scaleY(0.96); }
-  100% { opacity: 0; clip-path: inset(0 0 100% 0); transform: translateY(-9px) scaleY(0.9); }
+@keyframes i18n-content-swap {
+  0% { opacity: 0.2; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 /* 2026-07-21 polish: global language switch, refined notice modal, redeem progress */
@@ -4180,120 +4304,6 @@ html.is-exception-leaving .login-stage {
 .language-switcher:focus-visible {
   outline: 3px solid rgba(47, 102, 223, 0.22);
   outline-offset: 3px;
-}
-
-.site-notice-backdrop {
-  background:
-    radial-gradient(circle at 50% 35%, rgba(216, 255, 98, 0.14), transparent 30%),
-    rgba(5, 8, 12, 0.56);
-  backdrop-filter: blur(8px);
-}
-
-.site-notice {
-  width: min(492px, calc(100vw - 32px));
-  min-height: 0;
-  grid-template-columns: 58px minmax(0, 1fr) 36px;
-  gap: 0 16px;
-  padding: 28px;
-  border: 1px solid rgba(226, 232, 240, 0.14);
-  border-radius: 24px;
-  color: #f8fafc;
-  background:
-    linear-gradient(135deg, rgba(216, 255, 98, 0.16), transparent 34%),
-    radial-gradient(circle at 86% 12%, rgba(113, 225, 162, 0.2), transparent 30%),
-    #0c1117;
-  box-shadow: 0 34px 110px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.site-notice.error {
-  background:
-    linear-gradient(135deg, rgba(255, 107, 107, 0.17), transparent 34%),
-    radial-gradient(circle at 86% 12%, rgba(255, 214, 102, 0.16), transparent 28%),
-    #111015;
-}
-
-.site-notice::before {
-  content: "";
-  position: absolute;
-  inset: 11px;
-  pointer-events: none;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 18px;
-}
-
-.site-notice::after {
-  height: 4px;
-  background: linear-gradient(90deg, #d8ff62, #71e1a2);
-}
-
-.site-notice.error::after {
-  background: linear-gradient(90deg, #ff6b6b, #ffd166);
-}
-
-.site-notice-mark {
-  width: 58px;
-  height: 58px;
-  color: #152012;
-  background: linear-gradient(135deg, #d8ff62, #71e1a2);
-  box-shadow: 0 14px 30px rgba(113, 225, 162, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.32);
-}
-
-.site-notice.error .site-notice-mark {
-  color: #2a100f;
-  background: linear-gradient(135deg, #ff8b7d, #ffd166);
-  box-shadow: 0 14px 30px rgba(255, 107, 107, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.24);
-}
-
-.site-notice-mark span {
-  font-size: 25px;
-}
-
-.site-notice-kicker,
-.site-notice.success .site-notice-kicker {
-  color: #d8ff62;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-}
-
-.site-notice.error .site-notice-kicker {
-  color: #ffd166;
-}
-
-.site-notice h2 {
-  color: #ffffff;
-  font-size: 24px;
-  letter-spacing: -0.03em;
-}
-
-.site-notice p {
-  max-width: 34em;
-  margin-top: 9px;
-  color: rgba(248, 250, 252, 0.74);
-}
-
-.site-notice-close {
-  color: rgba(248, 250, 252, 0.72);
-  border-color: rgba(248, 250, 252, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.site-notice-close:hover {
-  color: #0c1117;
-  border-color: transparent;
-  background: #d8ff62;
-}
-
-.site-notice-confirm {
-  border-color: rgba(216, 255, 98, 0.5);
-  color: #111827;
-  background: #d8ff62;
-  box-shadow: 0 12px 28px rgba(216, 255, 98, 0.2);
-}
-
-.site-notice.error .site-notice-confirm {
-  border-color: rgba(255, 209, 102, 0.5);
-  background: #ffd166;
 }
 
 .redeem-progress-card {
@@ -4436,17 +4446,6 @@ select option:first-child {
     left: 10px;
     min-width: 64px;
     height: 32px;
-  }
-
-  .site-notice {
-    grid-template-columns: 48px minmax(0, 1fr) 34px;
-    padding: 22px 18px;
-    border-radius: 20px;
-  }
-
-  .site-notice-mark {
-    width: 48px;
-    height: 48px;
   }
 }
 

@@ -79,36 +79,3 @@ def get_public_base_url() -> str:
     if not parsed.netloc or (parsed.scheme != "https" and not is_local_http):
         raise RuntimeError("server.public_base_url 必须是 HTTPS 地址；仅本机开发允许 HTTP")
     return value
-
-
-def get_liveness_dashboard_url() -> str:
-    value = get_setting(
-        "liveness",
-        "dashboard_url",
-        "https://api.ambition.qzz.io/admin/cdk-liveness",
-    ).strip().rstrip("/")
-    parsed = urlsplit(value)
-    is_local_http = parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost"}
-    if not parsed.netloc or (parsed.scheme != "https" and not is_local_http):
-        raise RuntimeError("liveness.dashboard_url 必须是 HTTPS 地址；仅本机开发允许 HTTP")
-    return value
-
-
-def get_codex_models_url() -> str:
-    return get_setting("codex", "models_url", "https://chatgpt.com/backend-api/codex/models").strip()
-
-
-def get_codex_token_url() -> str:
-    return get_setting("codex", "token_url", "https://auth.openai.com/oauth/token").strip()
-
-
-def get_codex_oauth_client_id() -> str:
-    return get_setting("codex", "oauth_client_id", "app_EMoamEEZ73f0CkXaXp7hrann").strip()
-
-
-def get_codex_client_version() -> str:
-    return get_setting("codex", "client_version", "0.144.1").strip()
-
-
-def get_codex_outbound_proxy_url() -> str:
-    return get_setting("codex", "outbound_proxy_url", "").strip()

@@ -145,11 +145,6 @@ def prepare_redeemable_card(client: TestClient) -> tuple[int, str]:
         follow_redirects=False,
     )
     assert upload.status_code == 303
-    with SessionLocal() as db:
-        managed = db.query(ManagedFile).one()
-        managed.account_status = "available"
-        managed.account_checked_at = datetime.utcnow()
-        db.commit()
     created = client.post(
         "/admin/cards/create",
         data={"file_count": 1, "quantity": 1},

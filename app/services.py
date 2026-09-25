@@ -6,7 +6,6 @@ import secrets
 import shutil
 import uuid
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from io import BytesIO
 from datetime import datetime, timedelta
@@ -16,14 +15,6 @@ from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from .database import DOWNLOAD_DIR, UPLOAD_DIR, SessionLocal
-from .health import (
-    HEALTH_ALIVE,
-    HEALTH_CHECKING,
-    HEALTH_DEAD,
-    HEALTH_UNKNOWN,
-    CodexHealthClient,
-    health_candidate_eligible,
-)
 from .models import (
     PRODUCT_DRAFT,
     PRODUCT_HIDDEN,
@@ -54,26 +45,11 @@ MAX_ARCHIVE_COMPRESSION_RATIO = 200
 MAX_REDEEM_FILES = 100
 MAX_REDEEM_BYTES = 25 * 1024 * 1024
 MAX_REDEMPTION_CANDIDATES = 500
-MAX_HEALTH_CHECK_WORKERS = 4
-# Redemption is serialized at the API boundary, so a small dedicated pool can
-# speed up batch delivery health checks without multiplying server load.
-REDEEM_HEALTH_CHECK_WORKERS = 6
-REDEEM_HEALTH_CHECK_MAX_BATCH = 24
-HEALTH_PRECHECK_CANDIDATE_MULTIPLIER = 4
 FILES_PER_CARD = 1
 DEFAULT_PRODUCT_SKU = "legacy"
 SUB2API_DOWNLOAD_PREFIX = "sub2api"
 DOWNLOAD_TTL = timedelta(hours=6)
 CONVERT_DOWNLOAD_TTL = timedelta(minutes=10)
-HEALTH_AUDIT_ACTIONS = {
-    "check_file_account_status",
-    "automatic_upload_liveness",
-    "manual_liveness_check",
-    "manual_liveness_sync",
-    "manual_liveness_refresh",
-    "upload_and_check_liveness",
-    "redeem_health_precheck",
-}
 SECURE_RANDOM = secrets.SystemRandom()
 
 
@@ -94,12 +70,6 @@ class ResolvedTemporaryDownload:
     file_path: str
     download_name: str
     media_type: str
-
-
-@dataclass(frozen=True)
-class HealthCheckOutcome:
-    file_id: int
-    status: str
 
 
 @dataclass
@@ -151,9 +121,6 @@ def default_product_fields() -> dict[str, object]:
         "sku": DEFAULT_PRODUCT_SKU,
         "description": "用于承接旧库存和旧 CDK 的默认商品",
         "status": PRODUCT_LISTED,
-        "health_check_enabled": False,
-        "health_timeout_seconds": 15,
-        "health_daily_limit": 0,
         "low_stock_threshold": 3,
     }
 
@@ -176,12 +143,6 @@ def ensure_legacy_product(db: Session, creator_id: int | None = None) -> Product
 
 def default_product_id(db: Session) -> int:
     return ensure_legacy_product(db).id
-
-
-def normalize_product_health_enabled(product: Product, item: ManagedFile | None = None) -> bool:
-    if item is not None and item.source_format == "text":
-        return product.health_check_enabled
-    return product.health_check_enabled
 
 
 def add_audit(db: Session, actor_id: int | None, action: str, target_type: str, target_id: int | None = None, detail: str | None = None) -> None:
@@ -629,10 +590,6 @@ def save_json_file(
         existing.batch_name = batch_name
         existing.source_format = source_format
         existing.account_email = account_email
-        existing.account_status = None
-        existing.account_checked_at = None
-        existing.account_error = ""
-        existing.account_error_label = ""
         add_audit(db, uploader.id, "replace_file", "file", existing.id, existing.original_name)
         return existing
 
@@ -648,9 +605,6 @@ def save_json_file(
         batch_name=batch_name,
         source_format=source_format,
         account_email=account_email,
-        account_status=None,
-        account_error="",
-        account_error_label="",
     )
     db.add(managed)
     db.flush()
@@ -1082,13 +1036,7 @@ def create_cards(
 
 
 def normal_inventory_filter(product: Product | None = None):
-    if product is not None and not product.health_check_enabled:
-        return (ManagedFile.status == "available",)
-    return (
-        ManagedFile.status == "available",
-        ManagedFile.account_status == "available",
-        ManagedFile.account_checked_at.is_not(None),
-    )
+    return (ManagedFile.status == "available",)
 
 
 def product_file_filter(product: Product):
@@ -1100,72 +1048,16 @@ def product_file_filter(product: Product):
 def inventory_breakdown(db: Session, product_id: int | None = None) -> dict[str, int]:
     product = db.get(Product, product_id) if product_id is not None else None
     product_filter = (product_file_filter(product),) if product is not None else ()
-    if product is None:
-        normal = db.scalar(
-            select(func.count())
-            .select_from(ManagedFile)
-            .outerjoin(Product, ManagedFile.product_id == Product.id)
-            .where(
-                ManagedFile.status == "available",
-                or_(
-                    ManagedFile.product_id.is_(None),
-                    Product.health_check_enabled.is_(False),
-                    (
-                        Product.health_check_enabled.is_(True)
-                        & (ManagedFile.account_status == HEALTH_ALIVE)
-                        & ManagedFile.account_checked_at.is_not(None)
-                    ),
-                ),
-            )
-        ) or 0
-    else:
-        normal = db.scalar(select(func.count()).select_from(ManagedFile).where(*normal_inventory_filter(product), *product_filter)) or 0
-    healthy = db.scalar(
-        select(func.count()).select_from(ManagedFile).where(
-            ManagedFile.status == "available",
-            ManagedFile.account_status == "available",
-            ManagedFile.account_checked_at.is_not(None),
-            *product_filter,
-        )
+    available = db.scalar(
+        select(func.count())
+        .select_from(ManagedFile)
+        .where(ManagedFile.status == "available", *product_filter)
     ) or 0
-    problem = db.scalar(
-        select(func.count()).select_from(ManagedFile).where(
-            ManagedFile.status == "available",
-            ManagedFile.account_status == "unavailable",
-            *product_filter,
-        )
-    ) or 0
-    unknown = db.scalar(
-        select(func.count()).select_from(ManagedFile).where(
-            ManagedFile.status == "available",
-            ManagedFile.account_status == "unknown",
-            *product_filter,
-        )
-    ) or 0
-    unchecked = db.scalar(
-        select(func.count()).select_from(ManagedFile).where(
-            ManagedFile.status == "available",
-            or_(
-                ManagedFile.account_status.is_(None),
-                ManagedFile.account_status == "",
-                ManagedFile.account_status == HEALTH_CHECKING,
-                (ManagedFile.account_status == "available") & ManagedFile.account_checked_at.is_(None),
-            ),
-            *product_filter,
-        )
-    ) or 0
-    return {
-        "normal": normal,
-        "healthy": healthy,
-        "problem": problem,
-        "unknown": unknown,
-        "unchecked": unchecked,
-        "total": normal + problem + unknown,
-    }
+    return {"available": available, "total": available}
 
 
 def inventory_count(db: Session) -> int:
-    return inventory_breakdown(db)["normal"]
+    return inventory_breakdown(db)["available"]
 
 
 def public_delivery_products(db: Session) -> list[dict[str, int | str]]:
@@ -1179,16 +1071,7 @@ def public_delivery_products(db: Session) -> list[dict[str, int | str]]:
         ManagedFile.product_id == Product.id,
         and_(Product.sku == DEFAULT_PRODUCT_SKU, ManagedFile.product_id.is_(None)),
     )
-    deliverable_file = and_(
-        ManagedFile.status == "available",
-        or_(
-            Product.health_check_enabled.is_(False),
-            and_(
-                ManagedFile.account_status == HEALTH_ALIVE,
-                ManagedFile.account_checked_at.is_not(None),
-            ),
-        ),
-    )
+    deliverable_file = ManagedFile.status == "available"
     available_count = func.coalesce(func.sum(case((deliverable_file, 1), else_=0)), 0).label("available")
     rows = db.execute(
         select(
@@ -1284,8 +1167,6 @@ def claim_available_files(db: Session, file_ids: list[int], product: Product | N
     if not file_ids:
         return
     statement = update(ManagedFile).where(ManagedFile.id.in_(file_ids), ManagedFile.status == "available")
-    if product is None or product.health_check_enabled:
-        statement = statement.where(ManagedFile.account_status == "available", ManagedFile.account_checked_at.is_not(None))
     result = db.execute(statement.values(status="locked"))
     if result.rowcount != len(file_ids):
         raise FileClaimConflict
@@ -1315,137 +1196,6 @@ def assert_product_can_redeem(product: Product, card: Card) -> None:
         raise ServiceError(f"商品未上架，无法兑换：{card.code}")
 
 
-def product_health_used_last_24h(db: Session, product_id: int, timestamp: datetime | None = None) -> int:
-    timestamp = timestamp or now_utc()
-    cutoff = timestamp - timedelta(hours=24)
-    product = db.get(Product, product_id)
-    file_filter = product_file_filter(product) if product else ManagedFile.product_id == product_id
-    file_ids = select(ManagedFile.id).where(file_filter)
-    return db.scalar(
-        select(func.count())
-        .select_from(AuditLog)
-        .where(
-            AuditLog.target_type == "file",
-            AuditLog.action.in_(HEALTH_AUDIT_ACTIONS),
-            AuditLog.created_at >= cutoff,
-            AuditLog.target_id.in_(file_ids),
-        )
-    ) or 0
-
-
-def assert_product_health_allowed(db: Session, product: Product, timestamp: datetime | None = None) -> None:
-    if product.health_daily_limit <= 0:
-        return
-    used = product_health_used_last_24h(db, product.id, timestamp)
-    if used >= product.health_daily_limit:
-        raise ServiceError(f"商品 {product.name} 24 小时测活次数已达上限")
-
-
-def apply_health_result(item: ManagedFile, status: str, error: str, timestamp: datetime) -> None:
-    item.account_status = status
-    item.account_checked_at = timestamp
-    if status == HEALTH_ALIVE:
-        item.account_error = ""
-        item.account_error_label = ""
-    else:
-        label = (error or "测活未通过")[:255]
-        item.account_error = label
-        item.account_error_label = label
-
-
-def check_file_account_health(
-    db: Session,
-    item: ManagedFile,
-    actor_id: int | None,
-    audit_action: str = "check_file_account_status",
-    timestamp: datetime | None = None,
-) -> str:
-    timestamp = timestamp or now_utc()
-    product = item.product or (db.get(Product, item.product_id) if item.product_id else None)
-    if product:
-        assert_product_health_allowed(db, product, timestamp)
-    timeout_seconds = product.health_timeout_seconds if product else 15
-    try:
-        raw = read_account_file(item.stored_path)
-        result = CodexHealthClient(timeout_seconds=timeout_seconds).check(
-            raw,
-            persist=lambda updated: write_account_file(item.stored_path, updated),
-        )
-    except Exception as exc:
-        result_status = HEALTH_UNKNOWN
-        result_error = str(exc) or "测活失败"
-    else:
-        result_status = result.status
-        result_error = result.error
-    if result_status not in {HEALTH_ALIVE, HEALTH_DEAD, HEALTH_UNKNOWN}:
-        result_status = HEALTH_UNKNOWN
-        result_error = result_error or "测活返回未知状态"
-    apply_health_result(item, result_status, result_error, timestamp)
-    add_audit(
-        db,
-        actor_id,
-        audit_action,
-        "file",
-        item.id,
-        f"{item.original_name}:{item.account_status}:{item.account_error_label or ''}",
-    )
-    return result_status
-
-
-def check_file_account_health_by_id(
-    file_id: int,
-    actor_id: int | None,
-    audit_action: str,
-    timestamp: datetime,
-    revive_voided: bool = False,
-) -> HealthCheckOutcome:
-    with SessionLocal() as worker_db:
-        item = worker_db.get(ManagedFile, file_id)
-        if not item:
-            return HealthCheckOutcome(file_id=file_id, status="missing")
-        product = item.product or (worker_db.get(Product, item.product_id) if item.product_id else None)
-        if product and not product.health_check_enabled:
-            return HealthCheckOutcome(file_id=file_id, status="skipped")
-        status = check_file_account_health(worker_db, item, actor_id, audit_action, timestamp)
-        if revive_voided and status == HEALTH_ALIVE and item.status == "voided" and item.sold_card_id is None:
-            item.status = "available"
-            item.voided_at = None
-        worker_db.commit()
-        return HealthCheckOutcome(file_id=file_id, status=status)
-
-
-def run_file_health_checks_parallel(
-    file_ids: list[int],
-    actor_id: int | None,
-    audit_action: str,
-    timestamp: datetime,
-    max_workers: int = MAX_HEALTH_CHECK_WORKERS,
-    revive_voided: bool = False,
-) -> list[HealthCheckOutcome]:
-    ordered_ids = list(dict.fromkeys(int(file_id) for file_id in file_ids if file_id))
-    if not ordered_ids:
-        return []
-    worker_count = max(1, min(max_workers, len(ordered_ids)))
-    outcomes: list[HealthCheckOutcome] = []
-    errors: list[Exception] = []
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [
-            executor.submit(check_file_account_health_by_id, file_id, actor_id, audit_action, timestamp, revive_voided)
-            for file_id in ordered_ids
-        ]
-        for future in as_completed(futures):
-            try:
-                outcomes.append(future.result())
-            except Exception as exc:
-                errors.append(exc)
-    if errors:
-        first = errors[0]
-        if isinstance(first, ServiceError):
-            raise first
-        raise ServiceError(str(first) or "测活失败") from first
-    return outcomes
-
-
 def cards_needing_first_inventory(db: Session, cards: list[Card]) -> list[Card]:
     card_ids = [card.id for card in cards]
     if not card_ids:
@@ -1465,92 +1215,12 @@ def cards_needing_first_inventory(db: Session, cards: list[Card]) -> list[Card]:
 
 
 def prepare_cards_for_redemption(db: Session, cards: list[Card]) -> None:
-    first_cards = cards_needing_first_inventory(db, cards)
-    products_by_id: dict[int, Product] = {}
-    required_by_product: dict[int, int] = {}
+    # Validates redemption preconditions before any stock is claimed: a card
+    # that already has a completed redemption must not rebind new files, and
+    # every card's product still has to be listed.
+    cards_needing_first_inventory(db, cards)
     for card in cards:
-        product = card_product(db, card)
-        assert_product_can_redeem(product, card)
-        products_by_id[product.id] = product
-    for card in first_cards:
-        product_id = card_product(db, card).id
-        required_by_product[product_id] = required_by_product.get(product_id, 0) + card.file_count
-
-    timestamp = now_utc()
-    checked_any = False
-    for product_id, required in required_by_product.items():
-        product = products_by_id[product_id]
-        if not product.health_check_enabled:
-            continue
-        healthy = db.scalar(
-            select(func.count()).select_from(ManagedFile).where(
-                product_file_filter(product),
-                ManagedFile.status == "available",
-                ManagedFile.account_status == HEALTH_ALIVE,
-                ManagedFile.account_checked_at.is_not(None),
-            )
-        ) or 0
-        if healthy >= required:
-            continue
-        candidates = list(
-            db.scalars(
-                select(ManagedFile)
-                .where(product_file_filter(product), ManagedFile.status == "available")
-                .order_by(ManagedFile.uploaded_at.asc(), ManagedFile.id.asc())
-                .limit(MAX_REDEMPTION_CANDIDATES)
-            )
-        )
-        eligible_ids: list[int] = []
-        for item in candidates:
-            if item.account_status == HEALTH_ALIVE and item.account_checked_at is not None:
-                continue
-            if not health_candidate_eligible(item.account_status, item.account_checked_at, timestamp):
-                continue
-            eligible_ids.append(item.id)
-        cursor = 0
-        while healthy < required and cursor < len(eligible_ids):
-            # Probe only a small adaptive batch at a time.  This avoids the
-            # old eager 50-account sweep when a few live accounts are enough,
-            # while six I/O workers keep genuine batch redemptions responsive.
-            remaining_required = max(required - healthy, 1)
-            chunk_size = min(
-                REDEEM_HEALTH_CHECK_MAX_BATCH,
-                max(REDEEM_HEALTH_CHECK_WORKERS, remaining_required * 2),
-            )
-            if product.health_daily_limit > 0:
-                remaining = product.health_daily_limit - product_health_used_last_24h(db, product_id, timestamp)
-                if remaining <= 0:
-                    break
-                current_chunk_size = min(chunk_size, remaining)
-            else:
-                current_chunk_size = chunk_size
-            chunk = eligible_ids[cursor : cursor + current_chunk_size]
-            cursor += current_chunk_size
-            if not chunk:
-                break
-            db.commit()
-            run_file_health_checks_parallel(
-                chunk,
-                None,
-                "redeem_health_precheck",
-                timestamp,
-                max_workers=REDEEM_HEALTH_CHECK_WORKERS,
-            )
-            checked_any = True
-            db.expire_all()
-            healthy = db.scalar(
-                select(func.count()).select_from(ManagedFile).where(
-                    product_file_filter(product),
-                    ManagedFile.status == "available",
-                    ManagedFile.account_status == HEALTH_ALIVE,
-                    ManagedFile.account_checked_at.is_not(None),
-                )
-            ) or 0
-        if healthy < required:
-            db.commit()
-            raise ServiceError("可用库存测活未通过，请稍后重试")
-    if checked_any:
-        db.commit()
+        assert_product_can_redeem(card_product(db, card), card)
 
 
 def files_for_card_redemption(db: Session, cards: list[Card]) -> tuple[dict[int, list[ManagedFile]], set[int]]:

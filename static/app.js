@@ -1,6 +1,4 @@
 const inventoryEl = document.querySelector("#inventoryCount");
-const problemInventoryEl = document.querySelector("#problemInventoryCount");
-const uncheckedInventoryEl = document.querySelector("#uncheckedInventoryCount");
 const deliveryProductsEl = document.querySelector("[data-delivery-products]");
 const redeemForm = document.querySelector("#redeemForm");
 const convertForm = document.querySelector("#convertForm");
@@ -264,19 +262,15 @@ function syncDeliveryProducts(products) {
 }
 
 async function refreshInventory() {
-  if (!inventoryEl && !problemInventoryEl && !uncheckedInventoryEl && !deliveryProductsEl) return;
+  if (!inventoryEl && !deliveryProductsEl) return;
   try {
     const response = await fetchWithTimeout("/api/inventory", { cache: "no-store" }, 10000);
     if (!response.ok) throw new Error("Inventory request failed");
     const data = await response.json();
-    if (inventoryEl) animateNumber(inventoryEl, Number(data.normal ?? data.inventory ?? 0));
-    if (problemInventoryEl) animateNumber(problemInventoryEl, Number(data.problem || 0));
-    if (uncheckedInventoryEl) animateNumber(uncheckedInventoryEl, Number(data.unchecked || 0));
+    if (inventoryEl) animateNumber(inventoryEl, Number(data.available ?? data.total ?? data.normal ?? 0));
     syncDeliveryProducts(data.products);
   } catch {
     if (inventoryEl) inventoryEl.textContent = "--";
-    if (problemInventoryEl) problemInventoryEl.textContent = "--";
-    if (uncheckedInventoryEl) uncheckedInventoryEl.textContent = "--";
   }
 }
 
@@ -329,9 +323,8 @@ function startRedeemProgress(total) {
   clearInterval(progressTimer);
   const stages = [
     ["正在准备提货任务", "正在校验兑换码并排队", 12, 0],
-    ["正在执行商品验活", "该批次会按商品测活策略筛选可交付账号", 38, 1],
-    ["正在生成交付文件", "活号确认后生成一次性下载链接", 72, 2],
-    ["正在收尾", "加密库存正在安全出库", 88, 3],
+    ["正在生成交付文件", "库存确认后生成一次性下载链接", 48, 1],
+    ["正在收尾", "加密库存正在安全出库", 84, 2],
   ];
   let index = 0;
   setRedeemProgress(0, total, i18nText(stages[0][0]), i18nText(stages[0][1]), stages[0][2], stages[0][3]);
@@ -352,7 +345,7 @@ function finishRedeemProgress(total, ok) {
     ok ? i18nText("提货任务完成") : i18nText("提货任务未完成"),
     ok ? i18nText("下载链接已生成，请及时保存") : i18nText("请根据提示调整后重试"),
     ok ? 100 : 18,
-    ok ? 3 : 0,
+    ok ? 2 : 0,
   );
   progressCard?.classList.toggle("failed", !ok);
 }
@@ -453,7 +446,7 @@ redeemForm?.addEventListener("submit", async (event) => {
   } catch (error) {
     if (!isLookup) finishRedeemProgress(codes.length, false);
     showMessage(requestErrorMessage(error, isLookup ? "查找失败" : "兑换失败"), "error", {
-      kind: error?.name === "AbortError" ? "network" : "liveness",
+      kind: error?.name === "AbortError" ? "network" : "general",
     });
   } finally {
     setLoading(button, false, "");

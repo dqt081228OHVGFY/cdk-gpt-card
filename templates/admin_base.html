@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body_class %}admin-surface{% endblock %}
-{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='admin-theme.css') }}?v=admin-motion-20260722-1">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', path='admin-theme.css') }}?v=ui-unify-20260925-9">{% endblock %}
 {% block body %}
 <main class="admin-shell">
   <aside class="admin-sidebar">
@@ -16,9 +16,8 @@
       <a class="nav-link {% if request.url.path == '/admin/products' %}active{% endif %}" href="/admin/products"><span>03</span>商品管理</a>
       <a class="nav-link {% if request.url.path == '/admin/cards' %}active{% endif %}" href="/admin/cards"><span>04</span>CDK 管理</a>
       <a class="nav-link {% if request.url.path == '/admin/files' %}active{% endif %}" href="/admin/files"><span>05</span>账号文件</a>
-      <a class="nav-link {% if request.url.path == '/admin/liveness' %}active{% endif %}" href="/admin/liveness"><span>06</span>独立测活</a>
-      <a class="nav-link {% if request.url.path == '/admin/uploads' %}active{% endif %}" href="/admin/uploads"><span>07</span>批量导入</a>
-      <a class="nav-link {% if request.url.path == '/admin/profile' %}active{% endif %}" href="/admin/profile"><span>08</span>账户设置</a>
+      <a class="nav-link {% if request.url.path == '/admin/uploads' %}active{% endif %}" href="/admin/uploads"><span>06</span>批量导入</a>
+      <a class="nav-link {% if request.url.path == '/admin/profile' %}active{% endif %}" href="/admin/profile"><span>07</span>账户设置</a>
     </nav>
   </aside>
   <section class="admin-main">
@@ -51,5 +50,5 @@
     </div>
   </div>
 </main>
-<script src="{{ url_for('static', path='admin.js') }}?v=admin-motion-20260722-1"></script>
+<script src="{{ url_for('static', path='admin.js') }}?v=ui-unify-20260925-9"></script>
 {% endblock %}
