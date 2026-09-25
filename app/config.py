@@ -73,7 +73,7 @@ def get_cookie_secure() -> bool:
 
 
 def get_public_base_url() -> str:
-    value = get_setting("server", "public_base_url", "https://cdk.ambition.qzz.io").rstrip("/")
+    value = get_setting("server", "public_base_url", "https://example.com").rstrip("/")
     parsed = urlsplit(value)
     is_local_http = parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost"}
     if not parsed.netloc or (parsed.scheme != "https" and not is_local_http):

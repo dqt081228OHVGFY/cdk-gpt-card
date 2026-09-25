@@ -21,7 +21,7 @@ from app.security import hash_password
 from app.services import reset_storage_for_tests
 
 
-PUBLIC_BASE_URL = "https://cdk.ambition.qzz.io"
+PUBLIC_BASE_URL = "https://example.com"
 
 
 def reset_db() -> None:

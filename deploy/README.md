@@ -1,6 +1,6 @@
-# cdk.ambition.qzz.io 部署说明
+# 部署说明
 
-以下示例以 Debian/Ubuntu、项目目录 `/opt/cdk`、运行账号 `cdk`、本机监听端口 `18743` 为准。正式访问地址固定为 <https://cdk.ambition.qzz.io>。
+以下示例以 Debian/Ubuntu、项目目录 `/opt/cdk`、运行账号 `cdk`、本机监听端口 `18743` 为准。下文用 `example.com` 代表你的真实域名，部署时请替换为自己的域名。
 
 ## 1. 系统与应用
 
@@ -16,7 +16,7 @@ sudo -u cdk cp /opt/cdk/config.example.ini /opt/cdk/config.ini
 
 - 数据库建议使用 PostgreSQL，并创建独立的最小权限数据库账号。
 - `storage.dir` 使用可持久化、仅服务账号可写的绝对路径。
-- `server.public_base_url` 必须是 `https://cdk.ambition.qzz.io`，否则 API 返回的临时下载链接域名会错误。
+- `server.public_base_url` 必须是你的真实域名（如 `https://example.com`），否则 API 返回的临时下载链接域名会错误。
 - 更换 `session_secret` 和 `admin_password`；密钥不要提交到仓库。
 - 保持 `cookie_secure = true`，让管理员会话 Cookie 仅通过 HTTPS 发送。
 - 仅当反向代理可信并会覆盖转发头时设置 `trust_proxy_headers = true`。
@@ -63,8 +63,8 @@ sudo systemctl status cdk
 
 ```bash
 sudo a2enmod proxy proxy_http headers remoteip
-sudo cp /opt/cdk/deploy/cdk.ambition.qzz.io.apache.conf /etc/apache2/sites-available/cdk.ambition.qzz.io.conf
-sudo a2ensite cdk.ambition.qzz.io.conf
+sudo cp /opt/cdk/deploy/site.apache.conf /etc/apache2/sites-available/cdk.conf
+sudo a2ensite cdk.conf
 sudo apachectl configtest
 sudo systemctl reload apache2
 ```
@@ -73,12 +73,12 @@ sudo systemctl reload apache2
 
 配置会先删除请求中原有的 `X-Forwarded-For`，再用 Apache 看到的 `REMOTE_ADDR` 覆盖它，避免攻击者伪造来源地址绕过登录和兑换限流。若 Apache 前还有 CDN，必须仅允许 CDN 回源，并用 `mod_remoteip` 的可信代理网段白名单把 `REMOTE_ADDR` 还原为真实客户端地址；不要直接信任任意来源传入的 `X-Forwarded-For`。
 
-DNS 中将 `cdk.ambition.qzz.io` 指向部署服务器或 CDN。上线后检查：
+DNS 中将你的域名（`example.com`）指向部署服务器或 CDN。上线后检查：
 
 ```bash
-curl -I https://cdk.ambition.qzz.io/
-curl -I https://cdk.ambition.qzz.io/convert
-curl -I https://cdk.ambition.qzz.io/admin/login
+curl -I https://example.com/
+curl -I https://example.com/convert
+curl -I https://example.com/admin/login
 ```
 
 ## 4. 数据、清理与备份
@@ -90,7 +90,7 @@ curl -I https://cdk.ambition.qzz.io/admin/login
 
 ## 5. 安全验收
 
-- 公开页面没有 Linux.do 登录或 OAuth 回调；linux-do/cdk 只用于视觉参考。
+- 公开页面没有 Linux.do 登录或 OAuth 回调。
 - `/admin` 未登录时跳转到 `/admin/login`，普通用户角色不能登录。
 - 连续错误兑换或登录会返回 HTTP 429，并带 `Retry-After`。
-- API 返回的临时链接以 `https://cdk.ambition.qzz.io/d/` 开头，过期后返回 HTTP 410。
+- API 返回的临时链接以 `https://example.com/d/` 开头，过期后返回 HTTP 410。
